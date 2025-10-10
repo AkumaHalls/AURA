@@ -3,17 +3,22 @@ from discord.ext import commands
 from discord import app_commands
 from dotenv import load_dotenv
 
+#CARREGA E LE O ARQUIVO .env na raiz
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env')) #load .env da raiz
+
+try:
+    donoid = int(os.getenv("DONO_ID")) #acessa e define o id do dono
+except (ValueError, TypeError):
+    print("AVISO: A variável de ambiente 'DONO_ID' não está definida ou não é um número. Comandos de dono não funcionarão.")
+    donoid = None # Define como None para que as verificações falhem de forma segura
+
+square_token = os.getenv("square_token") #acessa e define o token da square cloud
+square_idaplication = os.getenv("square_idaplication") #acessa e define o id do bot na square cloud
 
 def getdonoid():
     return donoid
 def getmensagemerro():
     return mensagemerro
-
-#CARREGA E LE O ARQUIVO .env na raiz
-load_dotenv(os.path.join(os.path.dirname(__file__), '.env')) #load .env da raiz
-donoid = int(os.getenv("DONO_ID")) #acessa e define o id do dono
-square_token = os.getenv("square_token") #acessa e define o token da square cloud
-square_idaplication = os.getenv("square_idaplication") #acessa e define o id do bot na square cloud
 
 #Mensagem de erro que será exibida sempre que um comando falhar, edite aqui e alterará tudo
 mensagemerro = "<:ew:969703224825225266> Ue? Isso não funcionou como deveria... \nAcho que você tentou usar isso em um canal errado ou não tem permissão para tal função <:derp:969703169670131812>"
