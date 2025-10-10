@@ -1,4 +1,4 @@
-import discord,os,asyncio
+import discord,os,asyncio,time
 from discord.ext import commands
 from discord import app_commands,utils
 from datetime import datetime
@@ -18,6 +18,7 @@ config_valida = True
 try:
     #VARIAVEIS NECESSARIAS
     id_cargo_atendente = int(os.getenv("id_cargo_atendente")) 
+    id_canal_suporte = int(os.getenv("id_canal_suporte")) # NOVO: ID do canal onde os tickets serão criados como tópicos (threads)
     id_categoria_staff = int(os.getenv("id_categoria_staff")) 
     id_servidor_bh = int(os.getenv("id_servidor_bh")) 
     id_canal_logs_bh = int(os.getenv("id_canal_logs_bh")) 
@@ -124,53 +125,6 @@ class DropdownSuporte(discord.ui.View):
         self.add_item(suporte_cla())
 
 
-#BOTÂO CRIAR TICKET
-class CreateTicket(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=300)
-
-    @discord.ui.button(label="Abrir Ticket",style=discord.ButtonStyle.green,emoji="✅")
-    async def ticket(self,interaction: discord.Interaction, button: discord.ui.Button):
-        global emojiglobal, staff, categoriadeatendimento, tipoticket, mensagemcanal
-        
-        await interaction.response.defer() 
-
-        atendente = interaction.guild.get_role(staff)
-        categoria = interaction.guild.get_channel(categoriadeatendimento)
-        
-        channel_name = f"{emojiglobal}┃{interaction.user.name.lower().replace(' ', '-')}-{interaction.user.id}"
-        ticket = utils.get(interaction.guild.text_channels, name=channel_name)
-        
-        if ticket is not None:
-            await interaction.followup.send(f"Ei, você já tem um atendimento sobre isso em andamento aqui: {ticket.mention}!", ephemeral=True)
-        else:
-            overwrites = {
-                interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
-                interaction.user: discord.PermissionOverwrite(read_messages=True,send_messages=True,use_application_commands=True),
-                atendente: discord.PermissionOverwrite(read_messages=True,send_messages=True,use_application_commands=True)
-            }
-            ticket = await interaction.guild.create_text_channel(name=channel_name, category=categoria, overwrites=overwrites)
-            await interaction.followup.send(f"Criei um ticket para você! Acesse aqui: {ticket.mention}", ephemeral=True)
-
-            embedticket = discord.Embed(colour=discord.Color.gold(), description=f"**Tópico:** {tipoticket}\n**Responsável:** {atendente.mention}")
-            embedticket.set_author(name=f"Atendimento - {interaction.guild.name}", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-            embedticket.set_footer(text="Aguarde um momento, estou preparando o canal para você...")
-            await ticket.send(f"Avisando: {interaction.user.mention}", embed=embedticket)
-            await ticket.purge(limit=1)
-            await ticket.send(embed=embedticket)
-            
-            async with ticket.typing(): await asyncio.sleep(1.5)
-            await ticket.send(f"Oiiie {interaction.user.mention}, **tudo bem?**")
-            async with ticket.typing(): await asyncio.sleep(1.0)
-            await ticket.send(f"Seja muito bem-vindo(a) ao atendimento do clã **{interaction.guild.name}**!")
-            async with ticket.typing(): await asyncio.sleep(1.5)
-            await ticket.send(f"Daqui a pouco você será **atendido** por um {atendente.mention}.")
-            async with ticket.typing(): await asyncio.sleep(1.5)
-            await ticket.send(f"Enquanto isso, por favor, nos dê o máximo de detalhes sobre o seu caso.")
-            if mensagemcanal != "1":
-                await ticket.send(f"```{mensagemcanal}```")
-
-
 # VIEW DE ENCERRAMENTO COM BOTÕES
 class CloseTicketView(discord.ui.View):
     def __init__(self):
@@ -180,15 +134,13 @@ class CloseTicketView(discord.ui.View):
     async def fechar_ticket_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(f"Okay! Salvando o histórico e fechando este ticket em 5 segundos...")
         
-        # --- LÓGICA DE SALVAMENTO CORRIGIDA ---
+        # --- LÓGICA DE SALVAMENTO ---
         log_channel = None
-        # Procura o canal de log correspondente ao servidor atual
         if interaction.guild.id == id_servidor_bh: 
             log_channel = interaction.guild.get_channel(id_canal_logs_bh)
         elif interaction.guild.id == id_servidor_tribunal: 
             log_channel = interaction.guild.get_channel(id_canal_logs_tri)
 
-        # Se um canal de log foi encontrado, salva a transcrição
         if log_channel:
             log_filename = f"{interaction.channel.id}.md"
             try:
@@ -205,11 +157,8 @@ class CloseTicketView(discord.ui.View):
                 print(f"Log do ticket {interaction.channel.name} salvo com sucesso em {log_channel.name}.")
             except Exception as e:
                 print(f"ERRO ao salvar o log do ticket {interaction.channel.name}: {e}")
-
         else:
-            # Adiciona um aviso no console se nenhum canal de log foi configurado para este servidor
             print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
-            print("MOTIVO: O ID deste servidor não corresponde a 'id_servidor_bh' ou 'id_servidor_tribunal' nas variáveis de ambiente.")
         
         await asyncio.sleep(5)
         await interaction.channel.delete()
@@ -220,6 +169,101 @@ class CloseTicketView(discord.ui.View):
         await interaction.delete_original_response()
         await interaction.followup.send("O fechamento do ticket foi cancelado. A conversa pode continuar.", ephemeral=True)
 
+# [NOVA] VIEW DO PAINEL DE ADMIN DO TICKET
+class TicketAdminView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Atender", style=discord.ButtonStyle.green, emoji="✅", custom_id="atender_ticket")
+    async def atender_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        atendente_role = interaction.guild.get_role(id_cargo_atendente)
+        if atendente_role not in interaction.user.roles and not interaction.user.guild_permissions.manage_guild:
+            return await interaction.response.send_message("Você não tem permissão para atender este ticket.", ephemeral=True)
+        
+        await interaction.response.defer()
+
+        button.disabled = True
+        button.label = "Em Atendimento"
+        
+        original_embed = interaction.message.embeds[0]
+        new_embed = original_embed.copy()
+        new_embed.color = discord.Color.green()
+        new_embed.add_field(name="Atendido por", value=interaction.user.mention, inline=False)
+
+        await interaction.message.edit(embed=new_embed, view=self)
+        await interaction.channel.send(f"✅ O ticket está sendo atendido por {interaction.user.mention}.")
+
+    @discord.ui.button(label="Fechar", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="fechar_ticket_inicial")
+    async def fechar_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        atendente_role = interaction.guild.get_role(id_cargo_atendente)
+        if atendente_role not in interaction.user.roles and not interaction.user.guild_permissions.manage_guild:
+            return await interaction.response.send_message("Você não tem permissão para fechar este ticket.", ephemeral=True)
+        
+        await interaction.response.send_message("Você tem certeza que deseja fechar o ticket? Esta ação é irreversível.", view=CloseTicketView(), ephemeral=True)
+
+
+# [MODIFICADO] BOTÂO CRIAR TICKET
+class CreateTicket(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=300)
+
+    @discord.ui.button(label="Abrir Ticket",style=discord.ButtonStyle.green,emoji="✅")
+    async def ticket(self,interaction: discord.Interaction, button: discord.ui.Button):
+        global emojiglobal, staff, categoriadeatendimento, tipoticket, mensagemcanal
+        
+        await interaction.response.defer() 
+
+        atendente = interaction.guild.get_role(staff)
+        suporte_channel = interaction.guild.get_channel(id_canal_suporte)
+        
+        if not suporte_channel or not isinstance(suporte_channel, discord.TextChannel):
+            print(f"ERRO CRÍTICO: O canal de suporte com ID {id_canal_suporte} não foi encontrado ou não é um canal de texto.")
+            await interaction.followup.send("Desculpe, ocorreu um erro interno ao criar seu ticket. A administração já foi notificada.", ephemeral=True)
+            return
+
+        channel_name = f"{emojiglobal}┃{interaction.user.name.lower().replace(' ', '-')}-{interaction.user.id}"
+        
+        existing_thread = utils.get(suporte_channel.threads, name=channel_name)
+        if existing_thread is not None:
+            await interaction.followup.send(f"Ei, você já tem um atendimento sobre isso em andamento aqui: {existing_thread.mention}!", ephemeral=True)
+        else:
+            try:
+                ticket = await suporte_channel.create_thread(name=channel_name, type=discord.ChannelType.private_thread)
+                await interaction.followup.send(f"Criei um ticket para você! Acesse aqui: {ticket.mention}", ephemeral=True)
+
+                creation_timestamp = int(time.time())
+                embed_admin = discord.Embed(
+                    title=f"Ticket de {tipoticket}",
+                    color=discord.Color.gold()
+                )
+                embed_admin.set_author(name=f"Atendimento - {interaction.guild.name}", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
+                embed_admin.add_field(name="Membro", value=interaction.user.mention, inline=True)
+                embed_admin.add_field(name="Aberto", value=f"<t:{creation_timestamp}:R>", inline=True)
+                embed_admin.set_footer(text=f"ID do Usuário: {interaction.user.id}")
+
+                await ticket.send(
+                    content=f"Novo ticket de {interaction.user.mention}. {atendente.mention}",
+                    embed=embed_admin,
+                    view=TicketAdminView()
+                )
+                
+                async with ticket.typing(): await asyncio.sleep(1.5)
+                await ticket.send(f"Oiiie {interaction.user.mention}, **tudo bem?**")
+                async with ticket.typing(): await asyncio.sleep(1.0)
+                await ticket.send(f"Seja muito bem-vindo(a) ao atendimento do clã **{interaction.guild.name}**!")
+                async with ticket.typing(): await asyncio.sleep(1.5)
+                await ticket.send(f"Daqui a pouco você será **atendido** por um {atendente.mention}.")
+                async with ticket.typing(): await asyncio.sleep(1.5)
+                await ticket.send(f"Enquanto isso, por favor, nos dê o máximo de detalhes sobre o seu caso.")
+                if mensagemcanal != "1":
+                    await ticket.send(f"```{mensagemcanal}```")
+            except discord.Forbidden:
+                print(f"ERRO DE PERMISSÃO: O bot não tem permissão para criar tópicos (threads) no canal {suporte_channel.name} (ID: {id_canal_suporte}).")
+                await interaction.followup.send("Não foi possível criar o ticket por falta de permissões. Contate um administrador.", ephemeral=True)
+            except Exception as e:
+                print(f"ERRO DESCONHECIDO ao criar ticket: {e}")
+                await interaction.followup.send("Ocorreu um erro inesperado. Tente novamente mais tarde.", ephemeral=True)
+
 
 #INICIO DA CLASSE
 class atendimento(commands.Cog):
@@ -227,6 +271,7 @@ class atendimento(commands.Cog):
         self.client = client
         self.client.add_view(DropdownSuporte())
         self.client.add_view(CloseTicketView())
+        self.client.add_view(TicketAdminView()) # ADICIONA A NOVA VIEW
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -241,7 +286,7 @@ class atendimento(commands.Cog):
         await interaction.response.send_message("Painel de suporte criado!",ephemeral=True)
         
         embed = discord.Embed(colour=discord.Color.dark_gold(), title=f"🛡️ Central de Atendimento - {interaction.guild.name} 🛡️", description="Bem-vindo à central de ajuda! Use o menu abaixo para selecionar o motivo do seu contato e abrir um ticket. Um líder ou co-líder irá te ajudar.")
-        if interaction.guild.icon: embed.set_image(url=interaction.guild.icon.url)
+        if interaction.guild.icon: embed.set_thumbnail(url=interaction.guild.icon.url)
         embed.set_footer(text=f"Atendimento do Clã {interaction.guild.name}")
         await interaction.channel.send(embed=embed,view=DropdownSuporte()) 
 
@@ -251,7 +296,7 @@ class atendimento(commands.Cog):
     @atendi.command(name="encerrar", description='✉️ Envia a mensagem final e o botão para fechar um ticket.')
     @commands.has_permissions(manage_roles=True)
     async def encerrar(self, interaction: discord.Interaction):
-        if "┃" not in interaction.channel.name:
+        if not isinstance(interaction.channel, discord.Thread):
             return await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket.", ephemeral=True)
 
         membro_id_str = interaction.channel.name.split('-')[-1]
@@ -276,8 +321,8 @@ class atendimento(commands.Cog):
     @app_commands.describe(membro="O membro que você deseja adicionar.")
     @commands.has_permissions(manage_roles=True)
     async def adicionar(self,interaction: discord.Interaction,membro: discord.Member):
-        if "┃" in interaction.channel.name:
-            await interaction.channel.set_permissions(membro, read_messages=True, send_messages=True)
+        if isinstance(interaction.channel, discord.Thread):
+            await interaction.channel.add_user(membro)
             await interaction.response.send_message(embed=discord.Embed(colour=discord.Color.green(), title="✅ Membro Adicionado", description=f"{membro.mention} foi adicionado a este ticket."))
         else:
             await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket.",ephemeral=True)
@@ -286,8 +331,8 @@ class atendimento(commands.Cog):
     @app_commands.describe(membro="O membro que você deseja remover.")
     @commands.has_permissions(manage_roles=True)
     async def remover(self,interaction: discord.Interaction,membro: discord.Member):
-        if "┃" in interaction.channel.name:
-            await interaction.channel.set_permissions(membro, overwrite=None)
+        if isinstance(interaction.channel, discord.Thread):
+            await interaction.channel.remove_user(membro)
             await interaction.response.send_message(embed=discord.Embed(colour=discord.Color.red(), title="❌ Membro Removido", description=f"{membro.mention} foi removido deste ticket."))
         else:
             await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket.",ephemeral=True)
@@ -297,4 +342,3 @@ async def setup(client:commands.Bot):
         await client.add_cog(atendimento(client))
     else:
         print("O Cog 'atendimento' não foi carregado devido a um erro de configuração nas variáveis de ambiente.")
-
