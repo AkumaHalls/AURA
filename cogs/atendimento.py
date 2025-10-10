@@ -64,13 +64,10 @@ class suporte_cla(discord.ui.Select):
             custom_id="persistent_view:dropdown_clash_support"
         )
     async def callback(self, interaction: discord.Interaction):
-        # --- CORREÇÃO IMPORTANTE AQUI ---
-        # Deferimos a resposta imediatamente para evitar o erro "Unknown Interaction".
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         global emojiglobal, tipoticket, staff, mensagemcanal, categoriadeatendimento
 
-        # O resto do código permanece o mesmo, mas usamos followup.send
         if self.values[0] == "regras_cla":
             emojiglobal = "📜"; tipoticket = "Dúvidas sobre Regras"; staff = id_cargo_atendente
             mensagemcanal = "Por favor, descreva sua dúvida sobre as regras do clã para que um líder ou co-líder possa te ajudar."
@@ -136,7 +133,7 @@ class CreateTicket(discord.ui.View):
     async def ticket(self,interaction: discord.Interaction, button: discord.ui.Button):
         global emojiglobal, staff, categoriadeatendimento, tipoticket, mensagemcanal
         
-        await interaction.response.defer() # Defer para garantir que não haverá erros
+        await interaction.response.defer() 
 
         atendente = interaction.guild.get_role(staff)
         categoria = interaction.guild.get_channel(categoriadeatendimento)
@@ -177,7 +174,7 @@ class CreateTicket(discord.ui.View):
 # VIEW DE ENCERRAMENTO COM BOTÕES
 class CloseTicketView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None) # Timeout None para os botões não expirarem
+        super().__init__(timeout=None)
 
     @discord.ui.button(label="Fechar Ticket", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="fechar_ticket_confirm")
     async def fechar_ticket_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -215,7 +212,6 @@ class atendimento(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
         self.client.add_view(DropdownSuporte())
-        # Adiciona a view de fechamento para que ela seja persistente
         self.client.add_view(CloseTicketView())
 
     @commands.Cog.listener()
@@ -228,10 +224,14 @@ class atendimento(commands.Cog):
     @painel.command(name='suporte', description='⚔️ Crie um painel de suporte para o clã.')
     @commands.has_permissions(manage_guild=True)
     async def suporte(self,interaction: discord.Interaction):
+        # --- CORREÇÃO FINAL AQUI ---
+        # Primeiro, respondemos de forma efêmera para confirmar o comando.
+        await interaction.response.send_message("Painel de suporte criado!",ephemeral=True)
+        
+        # Depois, enviamos a mensagem pública com o painel.
         embed = discord.Embed(colour=discord.Color.dark_gold(), title=f"🛡️ Central de Atendimento - {interaction.guild.name} 🛡️", description="Bem-vindo à central de ajuda! Use o menu abaixo para selecionar o motivo do seu contato e abrir um ticket. Um líder ou co-líder irá te ajudar.")
         if interaction.guild.icon: embed.set_image(url=interaction.guild.icon.url)
         embed.set_footer(text=f"Atendimento do Clã {interaction.guild.name}")
-        await interaction.response.send_message("Painel de suporte criado!",ephemeral=True)
         await interaction.channel.send(embed=embed,view=DropdownSuporte()) 
 
     #GRUPO DE ATENDIMENTO
@@ -259,12 +259,8 @@ class atendimento(commands.Cog):
         async with interaction.channel.typing(): await asyncio.sleep(2)
         await interaction.channel.send(f"O clã **{interaction.guild.name}** agradece o contato e esperamos que seu problema tenha sido resolvido!")
         
-        # --- MUDANÇA IMPORTANTE AQUI ---
-        # Agora o comando envia a mensagem com os botões
         await interaction.channel.send("Você pode **Fechar o Ticket** para arquivar a conversa, ou **Cancelar** para continuar.", view=CloseTicketView())
 
-    # Removi o comando /atendimento fechar pois agora o /encerrar já faz tudo
-    
     @atendi.command(name="adicionar",description='➕ Adicione um membro ao ticket.')
     @app_commands.describe(membro="O membro que você deseja adicionar.")
     @commands.has_permissions(manage_roles=True)
