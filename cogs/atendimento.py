@@ -60,6 +60,7 @@ class suporte_cla(discord.ui.Select):
             discord.SelectOption(value="guerras_cwl",label="Ajuda com Guerras ou CWL", emoji="⚔️"),
             discord.SelectOption(value="doacoes",label="Problemas com Doações", emoji="🛡️"),
             discord.SelectOption(value="denuncia",label="Denunciar um Membro", emoji="🚨"),
+            discord.SelectOption(value="apelo_ban",label="Apelar de um Banimento", emoji="🔨"),
             discord.SelectOption(value="sugestao",label="Sugestões para o Clã", emoji="💡"),
             discord.SelectOption(value="recrutamento",label="Interesse em Recrutamento", emoji="📈"),
             discord.SelectOption(value="outros",label="Outros Assuntos", emoji="❔"),
@@ -105,6 +106,14 @@ class suporte_cla(discord.ui.Select):
             mensagemcanal = "Para a sua denúncia, por favor, escreva detalhadamente o que aconteceu e, se possível, envie prints como prova."
             categoriadeatendimento = id_categoria_staff
             await interaction.response.send_message("**Deseja denunciar um membro?**\n\nPara denunciar alguém por comportamento inadequado, por favor, tenha em mãos o **motivo, o nome do membro e provas (prints)**. Abra um ticket para prosseguir.", ephemeral=True, view=CreateTicket())
+
+        elif self.values[0] == "apelo_ban":
+            emojiglobal = "🔨"
+            tipoticket = "Ticket de Apelo de Banimento"
+            staff = id_cargo_atendente
+            mensagemcanal = "Para seu apelo, por favor, informe sua **TAG de jogador do Clash of Clans**, o **motivo do banimento** (se souber) e **por que você acredita que a punição deve ser revertida**."
+            categoriadeatendimento = id_categoria_staff
+            await interaction.response.send_message("**Você foi banido do clã e deseja apelar?**\n\nEntendemos que erros podem acontecer. Para que possamos analisar seu caso, por favor, abra um ticket e nos forneça todas as informações necessárias.", ephemeral=True, view=CreateTicket())
 
         elif self.values[0] == "sugestao":
             emojiglobal = "💡"
