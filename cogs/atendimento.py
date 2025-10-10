@@ -170,6 +170,7 @@ class CreateTicket(discord.ui.View):
                 colour=discord.Color.gold(),
                 description=f"**Tópico:** {tipoticket}\n**Responsável:** {atendente.mention}"
             )
+            # A linha abaixo usa o ícone do servidor dinamicamente
             embedticket.set_author(name=f"Atendimento - {interaction.guild.name}", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
             embedticket.set_footer(text="Aguarde um momento, estou preparando o canal para você...")
             
@@ -203,13 +204,11 @@ class DeleteTicket(discord.ui.View):
     async def confirm(self,interaction: discord.Interaction, button: discord.ui.Button):
         mod = interaction.guild.get_role(id_cargo_atendente)
         
-        # Apenas quem abriu o ticket ou um atendente pode fechar
         if str(interaction.user.id) in interaction.channel.name or (mod and mod in interaction.user.roles):
             await interaction.response.send_message(f"Okay! Salvando o histórico e fechando este ticket em 5 segundos...")
             button.disabled = True
             await interaction.message.edit(view=self)
 
-            # Lógica para salvar logs
             log_channel = None
             if interaction.guild.id == id_servidor_bh:
                 log_channel = interaction.guild.get_channel(id_canal_logs_bh)
@@ -238,7 +237,7 @@ class DeleteTicket(discord.ui.View):
 
 #INICIO DA CLASSE
 class atendimento(commands.Cog):
-    def __init__(self, client: commands.Bot):
+    def __init__(self, client: commands.Bot) -> None:
         self.client = client
         self.client.add_view(DropdownSuporte())
 
@@ -257,7 +256,12 @@ class atendimento(commands.Cog):
             title=f"🛡️ Central de Atendimento - {interaction.guild.name} 🛡️",
             description="Bem-vindo à central de ajuda do nosso clã! Use o menu abaixo para selecionar o motivo do seu contato e abrir um ticket. Um líder ou co-líder irá te ajudar em breve."
         )
-        embed.set_image(url="https://clashofclans.com/uploaded-images/1545041492_1544101918_coc-news-update-dec-1.jpg")
+        # --- MUDANÇA PRINCIPAL AQUI ---
+        # Usa o ícone do servidor como imagem principal do painel.
+        # Se o servidor não tiver ícone, nenhuma imagem será mostrada.
+        if interaction.guild.icon:
+            embed.set_image(url=interaction.guild.icon.url)
+
         embed.set_footer(text=f"Atendimento do Clã {interaction.guild.name}")
         await interaction.response.send_message("Painel de suporte criado!",ephemeral=True)
         await interaction.channel.send(embed=embed,view=DropdownSuporte()) 
