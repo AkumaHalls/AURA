@@ -8,8 +8,8 @@ from cogs.owner import getdonoid,getmensagemerro
 donoid = getdonoid()
 mensagemerro = getmensagemerro()
 
-erropermissão = "❌┃ Kyuuu... Parece que eu não tenho permissão de fazer isso."
-errobanir = "❌┃ Kyuuu... Parece que eu não tenho permissão de banir ou esse membro já foi banido."
+erropermissão = "❌┃ Eu não tenho permissão para fazer isso."
+errobanir = "❌┃ Eu não tenho permissão para banir ou esse membro já foi banido."
 
 #inicio dessa classe
 class admin(commands.Cog):
@@ -36,7 +36,7 @@ class admin(commands.Cog):
       if interaction.permissions.ban_members:
         resposta = discord.Embed(
             colour=discord.Color.red(),
-            title="🦊┃Banido",
+            title=" Banned",
             description=f"Membro: {membro}\nRazão: {razão}"
         )
         await membro.ban(reason=razão)
@@ -59,7 +59,7 @@ class admin(commands.Cog):
         await interaction.guild.unban(user)
         resposta = discord.Embed(
             colour=discord.Color.yellow(),
-            title="🦊┃Desbanido",
+            title=" Unbanned",
             description=f"Membro: {membro}"
         )
         await interaction.response.send_message(embed=resposta)
@@ -80,7 +80,7 @@ class admin(commands.Cog):
         if interaction.permissions.kick_members:
             resposta = discord.Embed(
                 colour=discord.Color.orange(),
-                title="🦊┃Expulso",
+                title=" Kicked",
                 description=f"Membro: {membro}\nRazão: {razão}"
             )
             await membro.kick(reason=razão)
@@ -112,7 +112,7 @@ class admin(commands.Cog):
   async def prunechat(self,interaction: discord.Interaction, quantidade:int):
     print (f"Usuario: {interaction.user.name} usou limpar chat em: {interaction.channel.name}")
     if interaction.permissions.manage_channels:
-        await interaction.response.send_message("<:stick:969703475720126464> - Limpando o chat...",ephemeral=True)
+        await interaction.response.send_message("🧹 - Limpando o chat...",ephemeral=True)
         await interaction.channel.purge(limit=quantidade)
     else: await interaction.response.send_message(mensagemerro,ephemeral=True)
 
@@ -126,7 +126,7 @@ class admin(commands.Cog):
         if categoria is None:
           novo_canal = await interaction.guild.create_text_channel(nome)
         else: novo_canal = await interaction.guild.create_text_channel(nome,category=categoria)
-        await interaction.response.send_message(f"<:stick:969703475720126464> - Criei o canal de texto {novo_canal.mention} para você.",ephemeral=True)
+        await interaction.response.send_message(f"✅ - Criei o canal de texto {novo_canal.mention} para você.",ephemeral=True)
     else: await interaction.response.send_message(mensagemerro,ephemeral=True)
 
 
@@ -148,7 +148,7 @@ class admin(commands.Cog):
        slow = f"Ativado em {chat.slowmode_delay}s"
     resposta = discord.Embed(
       colour=discord.Color.yellow(),
-      title=f"🦊┃Informações do Chat", 
+      title=f" Informações do Chat", 
       description=f"```{topico}```"
     )
     resposta.add_field(name=":small_blue_diamond:⠂Menção", value=f"```<#{chat.id}>```", inline=True)
@@ -181,7 +181,7 @@ class admin(commands.Cog):
         if categoria is None:
           novo_canal = await interaction.guild.create_voice_channel(nome)
         else: novo_canal = await interaction.guild.create_voice_channel(nome,category=categoria)
-        await interaction.response.send_message(f"<:stick:969703475720126464> - Criei o canal de texto {novo_canal.mention} para você.",ephemeral=True)
+        await interaction.response.send_message(f"✅ - Criei o canal de texto {novo_canal.mention} para você.",ephemeral=True)
     else: await interaction.response.send_message(mensagemerro,ephemeral=True)
 
 #COMANDO INFO CANAL
@@ -200,7 +200,7 @@ class admin(commands.Cog):
     else: canallimite = canal.user_limit
     resposta = discord.Embed(
       colour=discord.Color.yellow(),
-      title=f"🦊┃Informações de {canal.name}", 
+      title=f" Informações de {canal.name}", 
     )
     resposta.add_field(name=":small_blue_diamond:⠂Menção", value=f"```<#{canal.id}>```", inline=True)
     resposta.add_field(name="⚙️⠂Tipo", value=f"```Chat de Voz```", inline=True)    
@@ -226,7 +226,7 @@ class admin(commands.Cog):
       if interaction.permissions.manage_roles:
         resposta = discord.Embed(
           colour=discord.Color.yellow(),
-          title="🦊┃Cargo Adicionado",
+          title=" Cargo Adicionado",
           description=f"Membro: {membro.mention}\nCargo: {cargo}"
         )
         await membro.add_roles(cargo)
@@ -248,7 +248,7 @@ class admin(commands.Cog):
       if interaction.permissions.manage_roles:
         resposta = discord.Embed(
           colour=discord.Color.yellow(),
-          title="🦊┃Cargo Removido",
+          title=" Cargo Removido",
           description=f"Membro: {membro.mention}\nCargo: {cargo}"
         )
         await membro.remove_roles(cargo)
@@ -267,7 +267,7 @@ class admin(commands.Cog):
       if interaction.permissions.manage_roles:
         resposta = discord.Embed(
           colour=discord.Color.yellow(),
-          title="🦊┃Cargo Trocado",
+          title=" Cargo Trocado",
           description=f"Membro: {membro.mention}\nCargo: {retirar.mention} 🔁 {colocar.mention}"
         )
         await membro.remove_roles(retirar)
@@ -291,15 +291,9 @@ class admin(commands.Cog):
     if cargo.hoist is True:
         cargoseparado = "✅"
     else: cargoseparado = "❌"
-    resposta.set_thumbnail(url=cargo.icon)
+    if cargo.icon:
+        resposta.set_thumbnail(url=cargo.icon.url)
     resposta.add_field(name="🪪⠂Nome", value=f"```{cargo.name}```", inline=True)
     resposta.add_field(name="🆔⠂ID", value=f"```{cargo.id}```", inline=True)
-    resposta.add_field(name="🦊⠂menção", value=cargo.mention, inline=True)
-    resposta.add_field(name=f"⚙️⠂Especificações", value=f"```Mensionável: {mençãocargo}\nSeparado: {cargoseparado}```", inline=True)
-    resposta.add_field(name="📅⠂Criado em", value=f"```{datetime.strftime(cargo.created_at, '%d/%m/%Y')}```", inline=True)
-    members_with_role = len(cargo.members)
-    resposta.add_field(name=f"💼⠂Membros", value=f"```{members_with_role} Usuários```", inline=True)
-    await interaction.response.send_message(embed=resposta)
-
-async def setup(client:commands.Bot) -> None:
-  await client.add_cog(admin(client))
+    resposta.add_field(name=" Menção", value=cargo.mention, inline=True)
+    resposta.add_field(name=f"⚙️⠂Especificações", value=f"
