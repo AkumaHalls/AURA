@@ -174,28 +174,42 @@ class CreateTicket(discord.ui.View):
 # VIEW DE ENCERRAMENTO COM BOTÕES
 class CloseTicketView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None) 
 
     @discord.ui.button(label="Fechar Ticket", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="fechar_ticket_confirm")
     async def fechar_ticket_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(f"Okay! Salvando o histórico e fechando este ticket em 5 segundos...")
         
+        # --- LÓGICA DE SALVAMENTO CORRIGIDA ---
         log_channel = None
-        if interaction.guild.id == id_servidor_bh: log_channel = interaction.guild.get_channel(id_canal_logs_bh)
-        elif interaction.guild.id == id_servidor_tribunal: log_channel = interaction.guild.get_channel(id_canal_logs_tri)
+        # Procura o canal de log correspondente ao servidor atual
+        if interaction.guild.id == id_servidor_bh: 
+            log_channel = interaction.guild.get_channel(id_canal_logs_bh)
+        elif interaction.guild.id == id_servidor_tribunal: 
+            log_channel = interaction.guild.get_channel(id_canal_logs_tri)
 
+        # Se um canal de log foi encontrado, salva a transcrição
         if log_channel:
             log_filename = f"{interaction.channel.id}.md"
-            with open(log_filename, 'a', encoding="utf-8") as f:
-                f.write(f"# Histórico de {interaction.channel.name}:\n\n")
-                async for message in interaction.channel.history(limit=None, oldest_first=True):
-                    created = datetime.strftime(message.created_at, "%d/%m/%Y às %H:%M:%S")
-                    f.write(f"[{created}] {message.author}: {message.clean_content}\n")
-                f.write(f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*")
-            
-            with open(log_filename, 'rb') as f:
-                await log_channel.send(f"Transcrição do ticket `{interaction.channel.name}`:", file=discord.File(f, f"{interaction.channel.name}.md"))
-            os.remove(log_filename)
+            try:
+                with open(log_filename, 'a', encoding="utf-8") as f:
+                    f.write(f"# Histórico de {interaction.channel.name}:\n\n")
+                    async for message in interaction.channel.history(limit=None, oldest_first=True):
+                        created = datetime.strftime(message.created_at, "%d/%m/%Y às %H:%M:%S")
+                        f.write(f"[{created}] {message.author}: {message.clean_content}\n")
+                    f.write(f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*")
+                
+                with open(log_filename, 'rb') as f:
+                    await log_channel.send(f"Transcrição do ticket `{interaction.channel.name}`:", file=discord.File(f, f"{interaction.channel.name}.md"))
+                os.remove(log_filename)
+                print(f"Log do ticket {interaction.channel.name} salvo com sucesso em {log_channel.name}.")
+            except Exception as e:
+                print(f"ERRO ao salvar o log do ticket {interaction.channel.name}: {e}")
+
+        else:
+            # Adiciona um aviso no console se nenhum canal de log foi configurado para este servidor
+            print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
+            print("MOTIVO: O ID deste servidor não corresponde a 'id_servidor_bh' ou 'id_servidor_tribunal' nas variáveis de ambiente.")
         
         await asyncio.sleep(5)
         await interaction.channel.delete()
@@ -224,11 +238,8 @@ class atendimento(commands.Cog):
     @painel.command(name='suporte', description='⚔️ Crie um painel de suporte para o clã.')
     @commands.has_permissions(manage_guild=True)
     async def suporte(self,interaction: discord.Interaction):
-        # --- CORREÇÃO FINAL AQUI ---
-        # Primeiro, respondemos de forma efêmera para confirmar o comando.
         await interaction.response.send_message("Painel de suporte criado!",ephemeral=True)
         
-        # Depois, enviamos a mensagem pública com o painel.
         embed = discord.Embed(colour=discord.Color.dark_gold(), title=f"🛡️ Central de Atendimento - {interaction.guild.name} 🛡️", description="Bem-vindo à central de ajuda! Use o menu abaixo para selecionar o motivo do seu contato e abrir um ticket. Um líder ou co-líder irá te ajudar.")
         if interaction.guild.icon: embed.set_image(url=interaction.guild.icon.url)
         embed.set_footer(text=f"Atendimento do Clã {interaction.guild.name}")
@@ -281,7 +292,7 @@ class atendimento(commands.Cog):
         else:
             await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket.",ephemeral=True)
 
-async def setup(client:commands.Bot) -> None:
+async def setup(client:commands.Bot):
     if config_valida:
         await client.add_cog(atendimento(client))
     else:
