@@ -12,21 +12,34 @@ mensagemerro = getmensagemerro()
 #CARREGA E LE O ARQUIVO .env na raiz
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env')) #load .env da raiz
 
+# Flag para verificar se a configuração é válida
+config_valida = True
 
-#VARIAVEIS NECESSARIAS
-#Parte do Braixen's House
-id_cargo_atendente = int(os.getenv("id_cargo_atendente")) #Coloque aqui o ID do cargo de atendente do primeiro servidor
-id_categoria_staff = int(os.getenv("id_categoria_staff")) #Coloque aqui o ID da caregoria onde deseja que os tickets sejam criados (para primeiro servidor)
-id_servidor_bh = int(os.getenv("id_servidor_bh")) #ID do primeiro servidor
-id_canal_logs_bh = int(os.getenv("id_canal_logs_bh")) #ID do canal de logs do primeiro servidor
-id_canal_avaliacao = int(os.getenv("id_canal_avaliacao")) #ID do canal para envio das avaliações
+try:
+    #VARIAVEIS NECESSARIAS
+    #Parte do Braixen's House
+    id_cargo_atendente = int(os.getenv("id_cargo_atendente")) #Coloque aqui o ID do cargo de atendente do primeiro servidor
+    id_categoria_staff = int(os.getenv("id_categoria_staff")) #Coloque aqui o ID da caregoria onde deseja que os tickets sejam criados (para primeiro servidor)
+    id_servidor_bh = int(os.getenv("id_servidor_bh")) #ID do primeiro servidor
+    id_canal_logs_bh = int(os.getenv("id_canal_logs_bh")) #ID do canal de logs do primeiro servidor
+    id_canal_avaliacao = int(os.getenv("id_canal_avaliacao")) #ID do canal para envio das avaliações
 
 
-#Parte do Segundo servidor
-id_cargo_tribunal = int(os.getenv("id_cargo_tribunal")) #Coloque aqui o ID do cargo de atendente do segundo servidor
-id_categoria_tribunal = int(os.getenv("id_categoria_tribunal")) #Coloque aqui o ID da caregoria onde deseja que os tickets sejam criados (para Segundo servidor)
-id_servidor_tribunal= int(os.getenv("id_servidor_tribunal")) #ID do segundo servidor
-id_canal_logs_tri= int(os.getenv("id_canal_logs_tri")) #ID do canal de logs do segundo servidor
+    #Parte do Segundo servidor
+    id_cargo_tribunal = int(os.getenv("id_cargo_tribunal")) #Coloque aqui o ID do cargo de atendente do segundo servidor
+    id_categoria_tribunal = int(os.getenv("id_categoria_tribunal")) #Coloque aqui o ID da caregoria onde deseja que os tickets sejam criados (para Segundo servidor)
+    id_servidor_tribunal= int(os.getenv("id_servidor_tribunal")) #ID do segundo servidor
+    id_canal_logs_tri= int(os.getenv("id_canal_logs_tri")) #ID do canal de logs do segundo servidor
+
+except (ValueError, TypeError) as e:
+    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    print("!!! ERRO CRÍTICO AO CARREGAR CONFIGURAÇÕES DE ATENDIMENTO                   !!!")
+    print("!!! Verifique se TODAS as variáveis de ambiente no arquivo .env ou          !!!")
+    print("!!! na sua plataforma de hospedagem (Render.com) estão definidas e          !!!")
+    print("!!! são números de ID válidos. O erro foi:                                  !!!")
+    print(f"!!! {e}                                      !!!")
+    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    config_valida = False
 
 
 #Variaveis de USO GLOBAL| Se Quiser editar só edite o emojiglobal blz, o resto deixe do jeito que está
@@ -666,4 +679,7 @@ class atendimento(commands.Cog):
 
 
 async def setup(client:commands.Bot) -> None:
-  await client.add_cog(atendimento(client))
+    if config_valida:
+        await client.add_cog(atendimento(client))
+    else:
+        print("O Cog 'atendimento' não foi carregado devido a um erro de configuração nas variáveis de ambiente.")
