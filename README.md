@@ -1,4 +1,4 @@
-# 🤖 Brix
+# 🤖 Aura
 
 ![bot image](img/AURA.png)
 
