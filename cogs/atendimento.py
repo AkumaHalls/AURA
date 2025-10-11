@@ -286,7 +286,7 @@ class atendimento(commands.Cog):
         await interaction.response.send_message("Painel de suporte criado!",ephemeral=True)
         
         embed = discord.Embed(colour=discord.Color.dark_gold(), title=f"🛡️ Central de Atendimento - {interaction.guild.name} 🛡️", description="Bem-vindo à central de ajuda! Use o menu abaixo para selecionar o motivo do seu contato e abrir um ticket. Um líder ou co-líder irá te ajudar.")
-        if interaction.guild.icon: embed.set_thumbnail(url=interaction.guild.icon.url)
+        if interaction.guild.icon: embed.set_image(url=interaction.guild.icon.url)
         embed.set_footer(text=f"Atendimento do Clã {interaction.guild.name}")
         await interaction.channel.send(embed=embed,view=DropdownSuporte()) 
 
