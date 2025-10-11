@@ -3,3 +3,4 @@ python-dotenv #dependencia dot env - responsavel por ler o arquivo .env
 PyNaCl
 requests
 flask
+psutil
