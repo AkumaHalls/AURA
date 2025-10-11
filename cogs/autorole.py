@@ -1,5 +1,6 @@
 import discord
 import os
+import asyncio
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -76,6 +77,16 @@ class Autorole(commands.Cog):
                     await membro.add_roles(cargo_membro, reason="Autorole por palavra-chave 'Liberar'.")
                     print(f"Cargo '{cargo_membro.name}' adicionado para {membro.name}.")
                     await message.add_reaction("✅") # Feedback de sucesso
+                    
+                    # --- NOVO: LÓGICA DE RESPOSTA HUMANIZADA ---
+                    async with message.channel.typing():
+                        await asyncio.sleep(1.5) # Simula o bot digitando por 1.5 segundos
+                    
+                    mensagem_boas_vindas = await message.channel.send(f"Oiiie {membro.mention}, seja muito bem-vindo(a)! Seu registro foi liberado com sucesso. Explore o servidor! ✨")
+                    
+                    await asyncio.sleep(20) # Define quanto tempo a mensagem ficará visível (em segundos)
+                    await mensagem_boas_vindas.delete() # Apaga a mensagem para manter o canal limpo
+
                 except discord.Forbidden:
                     print(f"ERRO DE PERMISSÃO: Não foi possível adicionar o cargo '{cargo_membro.name}' para {membro.name}.")
                     await message.add_reaction("⚠️") # Feedback de erro de permissão
@@ -90,3 +101,4 @@ class Autorole(commands.Cog):
 async def setup(client: commands.Bot) -> None:
     """Função para carregar a Cog no bot."""
     await client.add_cog(Autorole(client))
+
