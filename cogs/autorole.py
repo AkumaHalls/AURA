@@ -55,46 +55,54 @@ class Autorole(commands.Cog):
             cargo_membro = guild.get_role(CARGO_MEMBRO_ID)
             cargo_banido = guild.get_role(CARGO_BANIDO_ID)
 
-            # Verifica se os cargos realmente existem no servidor
             if not cargo_membro or not cargo_banido:
                 print(f"ERRO AUTOROLE: O cargo de membro (ID: {CARGO_MEMBRO_ID}) ou de banido (ID: {CARGO_BANIDO_ID}) não foi encontrado no servidor '{guild.name}'.")
                 return
 
-            # --- LÓGICA PRINCIPAL: A EXCEÇÃO ---
-            # Verifica se o membro possui o cargo de banido
             if cargo_banido in membro.roles:
                 print(f"Autorole ignorado para '{membro.name}' pois possui o cargo '{cargo_banido.name}'.")
                 try:
-                    # Adiciona uma reação para dar feedback visual de que a ação foi bloqueada
                     await message.add_reaction("❌")
                 except discord.Forbidden:
                     print("AVISO: Não tenho permissão para adicionar reações no canal de registro.")
                 return
 
-            # Se o membro não for banido e ainda não tiver o cargo, adiciona o cargo de membro
             if cargo_membro not in membro.roles:
                 try:
+                    # Ação 1: Adicionar o cargo (crítico)
                     await membro.add_roles(cargo_membro, reason="Autorole por palavra-chave 'Liberar'.")
                     print(f"Cargo '{cargo_membro.name}' adicionado para {membro.name}.")
-                    await message.add_reaction("✅") # Feedback de sucesso
                     
-                    # --- NOVO: LÓGICA DE RESPOSTA HUMANIZADA ---
+                    # Ação 2: Reagir para dar feedback imediato
+                    await message.add_reaction("✅")
+
+                except discord.Forbidden:
+                    print(f"ERRO DE PERMISSÃO: Não foi possível adicionar o cargo '{cargo_membro.name}' para {membro.name} OU reagir à mensagem.")
+                    try:
+                        await message.add_reaction("⚠️")
+                    except discord.Forbidden:
+                        pass # Ignora se não conseguir reagir
+                    return # Para a execução aqui
+                except discord.HTTPException as e:
+                    print(f"ERRO HTTP ao adicionar cargo ou reagir: {e}")
+                    await message.add_reaction("⚠️")
+                    return
+
+                # Ação 3: Enviar a mensagem de boas-vindas
+                try:
                     async with message.channel.typing():
-                        await asyncio.sleep(1.5) # Simula o bot digitando por 1.5 segundos
+                        await asyncio.sleep(1.5)
                     
                     mensagem_boas_vindas = await message.channel.send(f"Oiiie {membro.mention}, seja muito bem-vindo(a)! Seu registro foi liberado com sucesso. Explore o servidor! ✨")
                     
-                    await asyncio.sleep(20) # Define quanto tempo a mensagem ficará visível (em segundos)
-                    await mensagem_boas_vindas.delete() # Apaga a mensagem para manter o canal limpo
-
+                    await asyncio.sleep(20)
+                    await mensagem_boas_vindas.delete()
+                
                 except discord.Forbidden:
-                    print(f"ERRO DE PERMISSÃO: Não foi possível adicionar o cargo '{cargo_membro.name}' para {membro.name}.")
-                    await message.add_reaction("⚠️") # Feedback de erro de permissão
-                except discord.HTTPException as e:
-                    print(f"ERRO HTTP ao adicionar cargo: {e}")
-                    await message.add_reaction("⚠️") # Feedback de erro genérico
+                    print(f"ERRO DE PERMISSÃO: Não tenho permissão para ENVIAR ou APAGAR mensagens no canal '{message.channel.name}'. Verifique as permissões do bot.")
+                except Exception as e:
+                    print(f"ERRO inesperado ao enviar/apagar a mensagem de boas-vindas: {e}")
             else:
-                # Se o membro já tem o cargo, apenas reage para confirmar que viu a mensagem
                 await message.add_reaction("👍")
 
 
