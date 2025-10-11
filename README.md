@@ -1,6 +1,6 @@
 # Brix
 
-![bot image](img/Brix%20Braixen.png)
+![bot image](img/AURA.png)
 
 
 Codigo em Python do Bot de interação e atendimento do Braixen's House com suporte a Cogs
