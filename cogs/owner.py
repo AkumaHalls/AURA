@@ -1,162 +1,173 @@
-import discord,os,requests
+import discord
+import os
+import psutil
+import platform
+import time
 from discord.ext import commands
 from discord import app_commands
 from dotenv import load_dotenv
 
-#CARREGA E LE O ARQUIVO .env na raiz
-load_dotenv(os.path.join(os.path.dirname(__file__), '.env')) #load .env da raiz
+# CARREGA E LE O ARQUIVO .env na raiz do projeto
+# O '..' sobe um nível de diretório para encontrar o .env
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 try:
-    donoid = int(os.getenv("DONO_ID")) #acessa e define o id do dono
+    # Acessa e define o id do dono a partir do .env
+    donoid = int(os.getenv("DONO_ID"))
 except (ValueError, TypeError):
     print("AVISO: A variável de ambiente 'DONO_ID' não está definida ou não é um número. Comandos de dono não funcionarão.")
     donoid = None # Define como None para que as verificações falhem de forma segura
 
-square_token = os.getenv("square_token") #acessa e define o token da square cloud
-square_idaplication = os.getenv("square_idaplication") #acessa e define o id do bot na square cloud
+# Pega o processo atual para informações de sistema
+PROC = psutil.Process(os.getpid())
 
 def getdonoid():
+    """Função para retornar o ID do dono."""
     return donoid
+
 def getmensagemerro():
+    """Função para retornar a mensagem de erro padrão."""
     return mensagemerro
 
-#Mensagem de erro que será exibida sempre que um comando falhar, edite aqui e alterará tudo
+# Mensagem de erro que será exibida sempre que um comando falhar.
 mensagemerro = "<:ew:969703224825225266> Ue? Isso não funcionou como deveria... \nAcho que você tentou usar isso em um canal errado ou não tem permissão para tal função <:derp:969703169670131812>"
 
-#inicio dessa classe
+# Início da classe da Cog
 class onwer(commands.Cog):
-  def __init__(self, client: commands.Bot):
-    self.client = client
+    def __init__(self, client: commands.Bot):
+        self.client = client
 
-  #usando o listener para permitir que os async daqui sejam escutados pelo main.py
-  @commands.Cog.listener()
-  #olha o mesmo on_ready aqui para imprimir o carregamento da cog
-  async def on_ready(self):
-    print("Cog onwer carregado.")
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Evento que é acionado quando a Cog está pronta."""
+        print("Cog onwer carregado.")
 
-  #GRUPO SERVIDOR - aqui estou criando um grupo de comandos
-  dono = app_commands.Group(name="onwer",description="Comandos de dono do bot.")
+    # GRUPO DE COMANDOS 'dono'
+    dono = app_commands.Group(name="owner", description="Comandos de dono do bot.")
 
-  #COMANDO SAY - neste caso estou criando um comando dentro de um grupo
-  @dono.command(name="say", description="🦊⠂Diga alguma coisa como Brix")
-  @app_commands.describe(mensagem="Qual é a mensagem?") #descrição adicional
-  async def say(self,interaction: discord.Interaction, mensagem: str):
-    print(f"Comando say - User: {interaction.user.name} - mensagem:{mensagem}") # imprime no terminal, vai ter de monte desses
-    if interaction.user.id == donoid: # Verifica se o usuário é o dono do bot
-      await interaction.response.send_message("<:BN:416595378956271626>┃ enviando sua mensagem...", ephemeral=True) # Envia uma resposta de interação que só é visível para o usuário
-      await interaction.channel.send(f"{mensagem}") # Envia a mensagem no canal
-    else:
-      await interaction.response.send_message(mensagemerro, ephemeral=True) # Envia uma resposta de erro que só é visível para o usuário
+    @dono.command(name="say", description="🦊⠂Diga alguma coisa como Brix")
+    @app_commands.describe(mensagem="Qual é a mensagem?")
+    async def say(self, interaction: discord.Interaction, mensagem: str):
+        print(f"Comando say - User: {interaction.user.name} - mensagem:{mensagem}")
+        if interaction.user.id == donoid:
+            await interaction.response.send_message("<:BN:416595378956271626>┃ enviando sua mensagem...", ephemeral=True)
+            await interaction.channel.send(f"{mensagem}")
+        else:
+            await interaction.response.send_message(mensagemerro, ephemeral=True)
 
-  #COMANDO LISTAR SERVIDORES
-  @dono.command(name="listar", description="🦊⠂lista os servidores que o Brix está.")
-  async def listservers (self,interaction: discord.Interaction):
-    print (f"Usuario: {interaction.user.name} usou lista servidores")
-    if interaction.user.id == donoid: # Verifica se o usuário é o dono do bot
-      await interaction.response.defer () # Envia uma resposta de interação para indicar que o comando está sendo processado
-      servers = self.client.guilds
-      lista = "Lista de Servidores 🦊\n" # Cria uma variável para armazenar a lista de servidores
-      for server in servers:
-        lista += f"Nome:`{server.name}` - id:`{server.id}`\n" # Adiciona o nome e o id de cada servidor à lista, separados por uma quebra de linha
-      await interaction.followup.send(content=lista) # Edita a resposta de interação com a lista de servidores
-    else:
-      await interaction.response.send_message(mensagemerro, ephemeral=True) # Envia uma resposta de interação que só é visível para o usuário
+    @dono.command(name="listar", description="🦊⠂lista os servidores que o Brix está.")
+    async def listservers(self, interaction: discord.Interaction):
+        print(f"Usuario: {interaction.user.name} usou lista servidores")
+        if interaction.user.id == donoid:
+            await interaction.response.defer(ephemeral=True)
+            servers = self.client.guilds
+            lista = "Lista de Servidores 🦊\n"
+            for server in servers:
+                lista += f"Nome:`{server.name}` - id:`{server.id}`\n"
+            await interaction.followup.send(content=lista)
+        else:
+            await interaction.response.send_message(mensagemerro, ephemeral=True)
 
-  #COMANDO SAIR Servidor
-  @dono.command(name="sair", description="🦊⠂Faz o Brix sair de servidor.")
-  @app_commands.describe(id_servidor="Qual é a Id do servidor?")
-  async def leave (self,interaction: discord.Interaction,id_servidor:str):
-    print (f"Usuario: {interaction.user.name} usou sair servidores")
-    if interaction.user.id == donoid:
-        guild = self.client.get_guild (int (id_servidor)) # Obtém o objeto guilda pelo ID
-        await guild.leave () # Faz o bot sair da guilda
-        await interaction.response.send_message(f"sai do {guild.name}")
-    else:
-        await interaction.response.send_message(mensagemerro,ephemeral=True)
+    @dono.command(name="sair", description="🦊⠂Faz o Brix sair de um servidor.")
+    @app_commands.describe(id_servidor="Qual é a ID do servidor?")
+    async def leave(self, interaction: discord.Interaction, id_servidor: str):
+        print(f"Usuario: {interaction.user.name} usou sair servidores")
+        if interaction.user.id == donoid:
+            try:
+                guild = self.client.get_guild(int(id_servidor))
+                if guild:
+                    await guild.leave()
+                    await interaction.response.send_message(f"Saí do servidor: {guild.name}")
+                else:
+                    await interaction.response.send_message("Não encontrei um servidor com essa ID.", ephemeral=True)
+            except ValueError:
+                await interaction.response.send_message("A ID do servidor deve ser um número.", ephemeral=True)
+        else:
+            await interaction.response.send_message(mensagemerro, ephemeral=True)
 
+    @dono.command(name="bot-name", description="🦊⠂Define um novo nome ao bot")
+    @app_commands.describe(nome="Qual é o novo nome?")
+    async def set_bot_name(self, interaction: discord.Interaction, nome: str):
+        print(f"Comando bot-name - User: {interaction.user.name} - novo nome:{nome}")
+        if interaction.user.id == donoid:
+            await self.client.user.edit(username=nome)
+            await interaction.response.send_message(f"<:BN:416595378956271626>┃ O Nome do bot foi definido para {nome}", ephemeral=True)
+        else:
+            await interaction.response.send_message(mensagemerro, ephemeral=True)
 
-  #COMANDO ALTERAR NOME BOT
-  @dono.command(name="bot-name", description="🦊⠂Define um novo nome ao bot")
-  @app_commands.describe(nome="Qual é o novo nome?")
-  async def say(self,interaction: discord.Interaction, nome: str):
-    print(f"Comando bot-name - User: {interaction.user.name} - mensagem:{nome}")
-    if interaction.user.id == donoid:
-      await self.client.user.edit(username=nome) #Edita o nome de usuario do bot
-      await interaction.response.send_message(f"<:BN:416595378956271626>┃ O Nome do bot definido para {nome}", ephemeral=True)
-    else:
-      await interaction.response.send_message(mensagemerro, ephemeral=True)
+    @dono.command(name="bot-avatar", description="🦊⠂Define um novo avatar ao bot")
+    @app_commands.describe(avatar="Qual é o novo avatar?")
+    async def set_bot_avatar(self, interaction: discord.Interaction, avatar: discord.Attachment):
+        print(f"Comando bot-avatar - User: {interaction.user.name}")
+        if interaction.user.id == donoid:
+            avatar_bytes = await avatar.read()
+            await self.client.user.edit(avatar=avatar_bytes)
+            await interaction.response.send_message(f"<:BN:416595378956271626>┃ O Avatar do bot foi redefinido", ephemeral=True)
+        else:
+            await interaction.response.send_message(mensagemerro, ephemeral=True)
 
+    # GRUPO DE COMANDOS 'bot'
+    bot = app_commands.Group(name="bot", description="Comandos de controle do bot.")
 
-  #COMANDO ALTERAR AVATAR BOT
-  @dono.command(name="bot-avatar", description="🦊⠂Define um novo avatar ao bot")
-  @app_commands.describe(avatar="Qual é o novo avatar?")
-  async def say(self,interaction: discord.Interaction, avatar: discord.Attachment):
-    print(f"Comando bot-avatar - User: {interaction.user.name}")
-    if interaction.user.id == donoid:
-      avatar = await avatar.read()
-      await self.client.user.edit(avatar=avatar) #Edita o avatar do bot
-      await interaction.response.send_message(f"<:BN:416595378956271626>┃ O Avatar do bot foi redefinido", ephemeral=True)
-    else:
-      await interaction.response.send_message(mensagemerro, ephemeral=True)
-
-
-
-
-    #GRUPO BOT 
-  bot=app_commands.Group(name="bot",description="Comandos de controle do bot.")
-  #COMANDO PING
-  @bot.command(name="ping",description='🤖⠂Exibe o ping do bot')
-  async def ping(self,interaction: discord.Interaction):
-    print (f"Usuario: {interaction.user.name} usou ping")
-    resposta = discord.Embed(
+    @bot.command(name="ping", description='🤖⠂Exibe o ping do bot')
+    async def ping(self, interaction: discord.Interaction):
+        print(f"Usuario: {interaction.user.name} usou ping")
+        resposta = discord.Embed(
             colour=discord.Color.yellow(),
             title="🏓┃Pong",
             description=f"Latencia: `{round(self.client.latency * 1000)}`ms."
         )
-    await interaction.response.send_message(embed=resposta)
+        await interaction.response.send_message(embed=resposta)
 
+    @bot.command(name="info", description='🤖⠂Exibe informações sobre o bot')
+    async def botinfo(self, interaction: discord.Interaction):
+        print(f"Usuario: {interaction.user.name} usou botinfo")
+        try:
+            # Informações de memória
+            mem = psutil.virtual_memory()
+            mem_total_mb = mem.total / (1024 * 1024)
+            mem_used_mb = mem.used / (1024 * 1024)
+            
+            # Uptime do processo (tempo que o bot está online)
+            start_time_timestamp = int(PROC.create_time())
 
-                  #COMANDO INFO BOT
-  @bot.command(name="info",description='🤖⠂Exibe informações sobre o bot')
-  async def botinfo(self, interaction: discord.Interaction):
-    print (f"Usuario: {interaction.user.name} usou botinfo")
-    try:
-      res_information =  requests.get(f"https://api.squarecloud.app/v2/apps/{square_idaplication}", headers={"Authorization": square_token})
-      res_information = res_information.json()
-      res_status =  requests.get(f"https://api.squarecloud.app/v2/apps/{square_idaplication}/status", headers={"Authorization": square_token})
-      res_status = res_status.json()
-      resposta = discord.Embed(
-              colour=discord.Color.yellow(),
-              title=f"🦊┃Informações do {self.client.user.name}",
-              description=f"{res_information['response']['app']['desc']}"
-          )
-      if self.client.user.avatar:
-        resposta.set_thumbnail(url=f"{self.client.user.avatar.url}")
-      resposta.add_field(name="🖥️⠂squarecloud.app", value=f"```{res_information['response']['app']['cluster']}```", inline=True)
-      resposta.add_field(name="👨‍💻⠂Linguagem", value=f"```{res_information['response']['app']['language']}```", inline=True)
-      resposta.add_field(name="🦊⠂Dono", value=f"<@{donoid}>", inline=True)
-      resposta.add_field(name="📊⠂Ram", value=f"```{(res_status['response']['ram'])} / {res_information['response']['app']['ram']} MB```", inline=True)
-      resposta.add_field(name="🌡⠂CPU", value=f"```{res_status['response']['cpu']}```", inline=True)
-      resposta.add_field(name="🕐⠂Uptime", value=f"<t:{round(res_status['response']['uptime']/1000)}:R>", inline=True)
-      resposta.add_field(name="🌐⠂Rede", value=f"```{res_status['response']['network']['total']}```", inline=True)
-      resposta.add_field(name="🏓⠂Ping", value=f"```{round(self.client.latency * 1000)}ms```", inline=True)
-      resposta.add_field(name="🔮⠂Menção", value=f"<@{self.client.user.id}>", inline=True)
+            resposta = discord.Embed(
+                colour=discord.Color.yellow(),
+                title=f"🦊┃Informações do {self.client.user.name}",
+                description="Aqui estão algumas informações sobre mim e a máquina que me hospeda."
+            )
+            if self.client.user.avatar:
+                resposta.set_thumbnail(url=self.client.user.avatar.url)
+            
+            # Informações da Hospedagem (Render)
+            resposta.add_field(name="🖥️ Hospedagem", value="```Render```", inline=True)
+            resposta.add_field(name="👨‍💻 Linguagem", value=f"```Python {platform.python_version()}```", inline=True)
+            resposta.add_field(name="📦 Biblioteca", value=f"```discord.py {discord.__version__}```", inline=True)
 
-      await interaction.response.send_message(embed=resposta)
-    except:
-      await interaction.response.send_message("Não foi configurado corretamente as informações para coleta de informações da squarecloud, verifique o arquivo .env")
+            # Informações de Recursos
+            resposta.add_field(name="📊 Uso de RAM", value=f"```{mem_used_mb:.2f} / {mem_total_mb:.2f} MB```", inline=True)
+            resposta.add_field(name="🌡️ Uso de CPU", value=f"```{psutil.cpu_percent()}%```", inline=True)
+            resposta.add_field(name="🕐 Online desde", value=f"<t:{start_time_timestamp}:R>", inline=True)
 
+            # Informações do Bot
+            resposta.add_field(name="🦊 Dono", value=f"<@{donoid}>", inline=True)
+            resposta.add_field(name="🏓 Ping", value=f"```{round(self.client.latency * 1000)}ms```", inline=True)
+            resposta.add_field(name="🔮 Menção", value=f"<@{self.client.user.id}>", inline=True)
 
-  #help comando
-  @bot.command(name="help",description='🤖⠂Ajuda sobre o bot.')
-  async def help(self,interaction: discord.Integration):
-    resposta = discord.Embed( 
-      colour=discord.Color.yellow(),
-      title="🦊┃Ajuda sobre o bot",
-      description="Eaeee O Braixen aqui, ainda estou em desenvolvimento"
-    )
-    await interaction.response.send_message(embed=resposta)
+            await interaction.response.send_message(embed=resposta)
+        except Exception as e:
+            print(f"Erro no comando botinfo: {e}")
+            await interaction.response.send_message("Ocorreu um erro ao buscar as informações do bot.", ephemeral=True)
 
+    @bot.command(name="help", description='🤖⠂Ajuda sobre o bot.')
+    async def help(self, interaction: discord.Interaction):
+        resposta = discord.Embed(
+            colour=discord.Color.yellow(),
+            title="🦊┃Ajuda sobre o bot",
+            description="Eaeee O Braixen aqui, ainda estou em desenvolvimento"
+        )
+        await interaction.response.send_message(embed=resposta)
 
-async def setup(client:commands.Bot) -> None:
-  await client.add_cog(onwer(client))
+async def setup(client: commands.Bot) -> None:
+    """Função para carregar a Cog no bot."""
+    await client.add_cog(onwer(client))
