@@ -4,3 +4,6 @@ PyNaCl
 requests
 flask
 psutil
+coc.py
+pytz
+aiohttp
