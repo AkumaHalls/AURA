@@ -252,18 +252,21 @@ class TicketClosingAdminView(discord.ui.View):
     async def fechar_modal_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Abre o modal de resumo para o admin."""
         # Se for um tópico (Thread), o bot precisa da permissão MANAGE_THREADS
-        if isinstance(interaction.channel, discord.Thread) and not interaction.guild.me.permissions_in(interaction.channel.parent).manage_threads:
-            return await interaction.response.send_message("❌ Erro: O bot precisa da permissão 'Gerenciar Tópicos' no canal principal para fechar este ticket (tópico).", ephemeral=True)
+        if isinstance(interaction.channel, discord.Thread):
+            parent = interaction.channel.parent
+            if parent and not interaction.guild.me.permissions_in(parent).manage_threads:
+                return await interaction.response.send_message("❌ Erro: O bot precisa da permissão 'Gerenciar Tópicos' no canal principal para fechar este ticket (tópico).", ephemeral=True)
         
+        # Tentativa de enviar o modal IMEDIATAMENTE.
         try:
-            # Envia o modal para o administrador
             await interaction.response.send_modal(TicketClosingModal(self.original_channel_id))
         except discord.errors.Forbidden:
             # Captura a falha na interação se o bot não puder responder
             await interaction.response.send_message("❌ Erro de Permissão: Falha ao abrir o campo de resumo. O bot precisa da permissão **'Usar Comandos de Aplicativo'** e **'Enviar Mensagens'** neste canal (tópico).", ephemeral=True)
         except Exception as e:
-            print(f"ERRO DESCONHECIDO ao enviar Modal: {e}")
-            await interaction.response.send_message("❌ Erro: Não foi possível abrir o campo de resumo. Contate o desenvolvedor.", ephemeral=True)
+            # A falha mais comum aqui é o timeout (o bot demorou para responder)
+            print(f"ERRO CRÍTICO no Modal: {e}")
+            await interaction.response.send_message("❌ Erro: A interação falhou (timeout). Tente novamente, ou verifique se o bot tem a permissão **'Usar Comandos de Aplicativo'** neste canal.", ephemeral=True)
 
 
         
