@@ -169,23 +169,23 @@ class TicketClosingModal(discord.ui.Modal, title="Fechamento e Resumo do Ticket"
             try:
                 dm_channel = await membro.create_dm()
                 
-                # CORREÇÃO DE RATE LIMIT: Usar typing apenas UMA vez e enviar a DM em blocos
+                # CORREÇÃO DE RATE LIMIT: Usar typing apenas UMA vez para todo o bloco de DM
                 async with dm_channel.typing():
+                    # Junta todas as mensagens em uma string para maior eficiência
+                    initial_dm_message = f"Olá {membro.mention}, tudo bem? O seu ticket de atendimento foi finalizado. 😊"
+                    final_message = (
+                        f"**O seu caso foi concluído e o resumo do fechamento é o seguinte:**\n\n"
+                        f"📝 *Resumo por {interaction.user.name}*:\n"
+                        f"```{closing_text}```\n\n"
+                        f"Agradecemos o seu contato e esperamos ter ajudado! Se precisar de algo mais, sinta-se à vontade para abrir um novo ticket. ✨"
+                    )
+
                     await asyncio.sleep(2.0) # Simula o tempo de digitação inicial
                 
-                await dm_channel.send(f"Olá {membro.mention}, tudo bem? O seu ticket de atendimento foi finalizado. 😊")
-                
-                await asyncio.sleep(1.5) # Pequeno delay entre as mensagens
-                
-                # Mensagem final com o resumo do administrador
-                final_message = (
-                    f"**O seu caso foi concluído e o resumo do fechamento é o seguinte:**\n\n"
-                    f"📝 *Resumo por {interaction.user.name}*:\n"
-                    f"```{closing_text}```\n\n"
-                    f"Agradecemos o seu contato e esperamos ter ajudado! Se precisar de algo mais, sinta-se à vontade para abrir um novo ticket. ✨"
-                )
-                
+                await dm_channel.send(initial_dm_message)
+                await asyncio.sleep(1.0) 
                 await dm_channel.send(final_message)
+                
                 await interaction.followup.send(f"✅ Ticket fechado com sucesso. O resumo foi enviado em DM para {membro.mention}.", ephemeral=True)
 
             except discord.Forbidden:
@@ -388,16 +388,21 @@ class CreateTicket(discord.ui.View):
                     view=TicketAdminView()
                 )
                 
-                async with ticket.typing(): await asyncio.sleep(1.5)
+                # OTIMIZAÇÃO: Usar typing apenas UMA vez para todo o bloco de introdução
+                async with ticket.typing():
+                    await asyncio.sleep(2.0)
+                
+                # CONSOLIDAÇÃO: Enviar todas as mensagens em sequência com pequenos sleeps (sem typing adicional)
                 await ticket.send(f"Oiiie {interaction.user.mention}, **tudo bem?**")
-                async with ticket.typing(): await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
                 await ticket.send(f"Seja muito bem-vindo(a) ao atendimento do clã **{interaction.guild.name}**!")
-                async with ticket.typing(): await asyncio.sleep(1.5)
+                await asyncio.sleep(0.5)
                 await ticket.send(f"Daqui a pouco você será **atendido** por um {atendente.mention}.")
-                async with ticket.typing(): await asyncio.sleep(1.5)
+                await asyncio.sleep(0.5)
                 await ticket.send(f"Enquanto isso, por favor, nos dê o máximo de detalhes sobre o seu caso.")
                 if mensagemcanal != "1":
                     await ticket.send(f"```{mensagemcanal}```")
+
             except discord.Forbidden:
                 print(f"ERRO DE PERMISSÃO: O bot não tem permissão para criar tópicos (threads) no canal {suporte_channel.name} (ID: {id_canal_suporte}).")
                 await interaction.followup.send("Não foi possível criar o ticket por falta de permissões. Contate um administrador.", ephemeral=True)
@@ -449,12 +454,15 @@ class atendimento(commands.Cog):
 
         await interaction.response.send_message("Enviando mensagem de encerramento...", ephemeral=True)
         
-        # Mensagens humanizadas antes do botão de fechar (mantendo a lógica de digitação)
-        async with interaction.channel.typing(): await asyncio.sleep(1.5)
+        # OTIMIZAÇÃO: Usar typing apenas UMA vez para todo o bloco de encerramento
+        async with interaction.channel.typing():
+             await asyncio.sleep(2.0)
+
+        # CONSOLIDAÇÃO: Enviar todas as mensagens em sequência com pequenos sleeps (sem typing adicional)
         await interaction.channel.send(f"Olá novamente {membro_mention}!")
-        async with interaction.channel.typing(): await asyncio.sleep(2)
+        await asyncio.sleep(1.0)
         await interaction.channel.send(f"Parece que seu atendimento está chegando ao fim.")
-        async with interaction.channel.typing(): await asyncio.sleep(2)
+        await asyncio.sleep(1.0)
         await interaction.channel.send(f"O clã **{interaction.guild.name}** agradece o contato e esperamos que seu problema tenha sido resolvido!")
         
         # Usa a nova view de confirmação de fechamento para o usuário
