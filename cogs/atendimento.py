@@ -255,8 +255,17 @@ class TicketClosingAdminView(discord.ui.View):
         if isinstance(interaction.channel, discord.Thread) and not interaction.guild.me.permissions_in(interaction.channel.parent).manage_threads:
             return await interaction.response.send_message("❌ Erro: O bot precisa da permissão 'Gerenciar Tópicos' no canal principal para fechar este ticket (tópico).", ephemeral=True)
         
-        # Envia o modal para o administrador
-        await interaction.response.send_modal(TicketClosingModal(self.original_channel_id))
+        try:
+            # Envia o modal para o administrador
+            await interaction.response.send_modal(TicketClosingModal(self.original_channel_id))
+        except discord.errors.Forbidden:
+            # Captura a falha na interação se o bot não puder responder
+            await interaction.response.send_message("❌ Erro de Permissão: Falha ao abrir o campo de resumo. O bot precisa da permissão **'Usar Comandos de Aplicativo'** e **'Enviar Mensagens'** neste canal (tópico).", ephemeral=True)
+        except Exception as e:
+            print(f"ERRO DESCONHECIDO ao enviar Modal: {e}")
+            await interaction.response.send_message("❌ Erro: Não foi possível abrir o campo de resumo. Contate o desenvolvedor.", ephemeral=True)
+
+
         
     @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="↩️")
     async def cancelar_fechar_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
