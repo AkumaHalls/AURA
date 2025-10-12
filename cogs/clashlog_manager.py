@@ -297,7 +297,8 @@ class ClashLogManager(commands.Cog):
 
             await verify_single_member(member, player_tag, guild)
             verified_count += 1
-            await asyncio.sleep(0.5) # Pequeno delay para evitar flood/throttling
+            # Aumentando o delay para 1.0s para maior segurança contra rate limiting.
+            await asyncio.sleep(1.0) 
 
         logger.info(f"--- Tarefa de Verificação Periódica Concluída. Verificados: {verified_count} membros. ---")
 
