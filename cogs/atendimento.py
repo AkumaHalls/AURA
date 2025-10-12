@@ -5,18 +5,18 @@ from datetime import datetime
 from cogs.owner import getdonoid,getmensagemerro
 from dotenv import load_dotenv
 
-# GET INFO USO
+#GET INFO USO
 donoid = getdonoid()
 mensagemerro = getmensagemerro()
 
-# CARREGA E LE O ARQUIVO .env na raiz
+#CARREGA E LE O ARQUIVO .env na raiz
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env')) #load .env da raiz
 
 # Flag para verificar se a configuração é válida
 config_valida = True
 
 try:
-    # VARIAVEIS NECESSARIAS
+    #VARIAVEIS NECESSARIAS
     id_cargo_atendente = int(os.getenv("id_cargo_atendente")) 
     id_canal_suporte = int(os.getenv("id_canal_suporte")) # NOVO: ID do canal onde os tickets serão criados como tópicos (threads)
     id_categoria_staff = int(os.getenv("id_categoria_staff")) 
@@ -24,7 +24,7 @@ try:
     id_canal_logs_bh = int(os.getenv("id_canal_logs_bh")) 
     id_canal_avaliacao = int(os.getenv("id_canal_avaliacao"))
 
-    # Parte do Segundo servidor (se houver)
+    #Parte do Segundo servidor (se houver)
     id_servidor_tribunal= int(os.getenv("id_servidor_tribunal"))
     id_canal_logs_tri= int(os.getenv("id_canal_logs_tri"))
 
@@ -37,14 +37,14 @@ except (ValueError, TypeError) as e:
     config_valida = False
 
 
-# Variaveis de USO GLOBAL
+#Variaveis de USO GLOBAL
 emojiglobal = "⚔️"
 tipoticket = "1"
 staff = "1"
 mensagemcanal = "1"
 categoriadeatendimento = "1"
 
-# PAINEL SUPORTE DO CLÃ (Clash of Clans)
+#PAINEL SUPORTE DO CLÃ (Clash of Clans)
 class suporte_cla(discord.ui.Select):
     def __init__(self):
         options = [
@@ -118,156 +118,22 @@ class suporte_cla(discord.ui.Select):
             await interaction.followup.send("**Seu assunto não está na lista?**\n\nSem problemas! Crie um ticket clicando no botão abaixo.", view=CreateTicket())
 
 
-# PAINEL PERSISTENTE
+#PAINEL PERSISTENTE
 class DropdownSuporte(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(suporte_cla())
 
 
-# =========================================================================
-# NOVAS CLASSES PARA FECHAMENTO COM RESUMO E DM HUMANIZADA
-# =========================================================================
+# VIEW DE ENCERRAMENTO COM BOTÕES
+class CloseTicketView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None) 
 
-class TicketClosingModal(discord.ui.Modal, title="Fechamento e Resumo do Ticket"):
-    """Modal para coletar o resumo do fechamento do administrador."""
-    def __init__(self, original_channel_id: int):
-        super().__init__()
-        self.original_channel_id = original_channel_id
-        
-    closing_summary = discord.ui.TextInput(
-        label="Resumo do Fechamento (Obrigatório)",
-        placeholder="Digite o motivo ou resumo do fechamento para enviar ao membro...",
-        style=discord.TextStyle.long,
-        max_length=1500,
-        required=True
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        # 1. Defer the interaction response (important for long operations)
-        await interaction.response.defer(thinking=True, ephemeral=True)
-
-        # 2. Get the original channel object
-        channel = interaction.guild.get_channel(self.original_channel_id)
-        if not channel:
-            return await interaction.followup.send("❌ Erro: O canal do ticket não foi encontrado. Talvez já tenha sido fechado.", ephemeral=True)
-
-        # 3. Extract user ID and Member object
-        membro_id_str = channel.name.split('-')[-1]
-        membro = None
-        membro_mention = "(usuário não encontrado)"
-        try:
-            membro = interaction.guild.get_member(int(membro_id_str))
-            membro_mention = membro.mention if membro else f"(ID: {membro_id_str})"
-        except ValueError:
-            pass # ID inválido na thread name
-
-        closing_text = self.closing_summary.value
-        
-        # 4. Send humanized DM to the user (Feature solicitada)
-        if membro:
-            try:
-                dm_channel = await membro.create_dm()
-                
-                # CORREÇÃO DE RATE LIMIT: Usar typing apenas UMA vez para todo o bloco de DM
-                async with dm_channel.typing():
-                    # Junta todas as mensagens em uma string para maior eficiência
-                    initial_dm_message = f"Olá {membro.mention}, tudo bem? O seu ticket de atendimento foi finalizado. 😊"
-                    final_message = (
-                        f"**O seu caso foi concluído e o resumo do fechamento é o seguinte:**\n\n"
-                        f"📝 *Resumo por {interaction.user.name}*:\n"
-                        f"```{closing_text}```\n\n"
-                        f"Agradecemos o seu contato e esperamos ter ajudado! Se precisar de algo mais, sinta-se à vontade para abrir um novo ticket. ✨"
-                    )
-
-                    await asyncio.sleep(2.0) # Simula o tempo de digitação inicial
-                
-                await dm_channel.send(initial_dm_message)
-                await asyncio.sleep(1.0) 
-                await dm_channel.send(final_message)
-                
-                await interaction.followup.send(f"✅ Ticket fechado com sucesso. O resumo foi enviado em DM para {membro.mention}.", ephemeral=True)
-
-            except discord.Forbidden:
-                await interaction.followup.send(f"⚠️ Ticket fechado com sucesso, mas não consegui enviar a mensagem privada para {membro_mention} (DM bloqueada ou erro).", ephemeral=True)
-            except Exception as e:
-                print(f"ERRO ao enviar DM de fechamento: {e}")
-                await interaction.followup.send(f"⚠️ Ticket fechado, mas ocorreu um erro ao enviar a DM. Contate o desenvolvedor. Erro: {e}", ephemeral=True)
-        else:
-            await interaction.followup.send(f"⚠️ Ticket fechado, mas não foi possível encontrar o membro (ID: {membro_id_str}) para enviar a DM. Verifique as permissões.", ephemeral=True)
-
-
-        # 5. --- LÓGICA DE SALVAMENTO (Log Existing) ---
-        log_channel = None
-        if interaction.guild.id == id_servidor_bh: 
-            log_channel = interaction.guild.get_channel(id_canal_logs_bh)
-        elif interaction.guild.id == id_servidor_tribunal: 
-            log_channel = interaction.guild.get_channel(id_canal_logs_tri)
-
-        if log_channel:
-            log_filename = f"{channel.id}.md"
-            try:
-                with open(log_filename, 'a', encoding="utf-8") as f:
-                    f.write(f"# Histórico de {channel.name}:\n\n")
-                    # Adiciona o resumo de fechamento ao log
-                    f.write(f"--- Fechamento Administrativo ---\nFechado por: {interaction.user.name} (ID: {interaction.user.id})\nResumo: {closing_text}\n------------------------------\n\n") 
-                    async for message in channel.history(limit=None, oldest_first=True):
-                        created = datetime.strftime(message.created_at, "%d/%m/%Y às %H:%M:%S")
-                        f.write(f"[{created}] {message.author}: {message.clean_content}\n")
-                    f.write(f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*")
-                
-                with open(log_filename, 'rb') as f:
-                    await log_channel.send(f"Transcrição do ticket `{channel.name}` (Fechado por {interaction.user.mention}):", file=discord.File(f, f"{channel.name}.md"))
-                os.remove(log_filename)
-                print(f"Log do ticket {channel.name} salvo com sucesso em {log_channel.name}.")
-            except Exception as e:
-                print(f"ERRO ao salvar o log do ticket {channel.name}: {e}")
-        else:
-            print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
-
-        # 6. Delete the channel (com delay de segurança)
-        await asyncio.sleep(1.0)
-        try:
-            await channel.delete()
-        except discord.Forbidden:
-            await interaction.followup.send("❌ Erro: O bot não tem permissão para deletar este canal. O log foi salvo, mas a exclusão falhou.", ephemeral=True)
-        except Exception as e:
-             await interaction.followup.send(f"❌ Erro ao deletar o canal: {e}", ephemeral=True)
-
-class TicketClosingAdminView(discord.ui.View):
-    """View de Confirmação para Fechamento de Admin (Chama o Modal)."""
-    def __init__(self, original_channel_id: int):
-        super().__init__(timeout=300) 
-        self.original_channel_id = original_channel_id
-
-    @discord.ui.button(label="Fechar e Resumir", style=discord.ButtonStyle.danger, emoji="🗑️")
-    async def fechar_modal_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Abre o modal de resumo para o admin."""
-        # Envia o modal para o administrador
-        await interaction.response.send_modal(TicketClosingModal(self.original_channel_id))
-        
-    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="↩️")
-    async def cancelar_fechar_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await interaction.delete_original_response()
-        await interaction.followup.send("O fechamento do ticket foi cancelado. A conversa pode continuar.", ephemeral=True)
-
-class TicketUserClosingView(discord.ui.View):
-    """View de Confirmação para o comando /atendimento encerrar (Sem modal, apenas confirmação)."""
-    def __init__(self, channel_id: int):
-        super().__init__(timeout=300)
-        self.channel_id = channel_id
-
-    @discord.ui.button(label="Fechar Ticket", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="Fechar Ticket", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="fechar_ticket_confirm")
     async def fechar_ticket_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(f"Okay! Salvando o histórico e fechando este ticket em 5 segundos...")
         
-        # 1. Defer the interaction response
-        await interaction.response.send_message(f"Okay! Salvando o histórico e fechando este ticket em 5 segundos...", ephemeral=True)
-        
-        channel = interaction.guild.get_channel(self.channel_id)
-        if not channel:
-            return await interaction.followup.send("❌ Erro: O canal do ticket não foi encontrado. Talvez já tenha sido fechado.", ephemeral=True)
-
         # --- LÓGICA DE SALVAMENTO ---
         log_channel = None
         if interaction.guild.id == id_servidor_bh: 
@@ -276,40 +142,38 @@ class TicketUserClosingView(discord.ui.View):
             log_channel = interaction.guild.get_channel(id_canal_logs_tri)
 
         if log_channel:
-            log_filename = f"{channel.id}.md"
+            log_filename = f"{interaction.channel.id}.md"
             try:
                 with open(log_filename, 'a', encoding="utf-8") as f:
-                    f.write(f"# Histórico de {channel.name}:\n\n")
-                    f.write(f"--- Fechamento Solicitado pelo Usuário/Encerramento ---\n-------------------------------------------------------\n\n") 
-                    async for message in channel.history(limit=None, oldest_first=True):
+                    f.write(f"# Histórico de {interaction.channel.name}:\n\n")
+                    async for message in interaction.channel.history(limit=None, oldest_first=True):
                         created = datetime.strftime(message.created_at, "%d/%m/%Y às %H:%M:%S")
                         f.write(f"[{created}] {message.author}: {message.clean_content}\n")
                     f.write(f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*")
                 
                 with open(log_filename, 'rb') as f:
-                    await log_channel.send(f"Transcrição do ticket `{channel.name}` (Fechamento via `encerrar`):", file=discord.File(f, f"{channel.name}.md"))
+                    await log_channel.send(f"Transcrição do ticket `{interaction.channel.name}`:", file=discord.File(f, f"{interaction.channel.name}.md"))
                 os.remove(log_filename)
-                print(f"Log do ticket {channel.name} salvo com sucesso em {log_channel.name}.")
+                print(f"Log do ticket {interaction.channel.name} salvo com sucesso em {log_channel.name}.")
             except Exception as e:
-                print(f"ERRO ao salvar o log do ticket {channel.name}: {e}")
+                print(f"ERRO ao salvar o log do ticket {interaction.channel.name}: {e}")
         else:
             print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
         
         await asyncio.sleep(5)
-        await channel.delete()
+        await interaction.channel.delete()
 
-    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="↩️")
+    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="↩️", custom_id="cancelar_fechar_ticket")
     async def cancelar_fechar_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         await interaction.delete_original_response()
         await interaction.followup.send("O fechamento do ticket foi cancelado. A conversa pode continuar.", ephemeral=True)
 
-
-# [MODIFICADO] VIEW DO PAINEL DE ADMIN DO TICKET
+# [NOVA] VIEW DO PAINEL DE ADMIN DO TICKET
 class TicketAdminView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        
+
     @discord.ui.button(label="Atender", style=discord.ButtonStyle.green, emoji="✅", custom_id="atender_ticket")
     async def atender_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         atendente_role = interaction.guild.get_role(id_cargo_atendente)
@@ -335,12 +199,7 @@ class TicketAdminView(discord.ui.View):
         if atendente_role not in interaction.user.roles and not interaction.user.guild_permissions.manage_guild:
             return await interaction.response.send_message("Você não tem permissão para fechar este ticket.", ephemeral=True)
         
-        # O administrador deve usar esta view para iniciar o processo de fechamento com resumo.
-        await interaction.response.send_message(
-            "Você tem certeza que deseja fechar o ticket? Isso pedirá um resumo antes de finalizar.", 
-            view=TicketClosingAdminView(interaction.channel.id), 
-            ephemeral=True
-        )
+        await interaction.response.send_message("Você tem certeza que deseja fechar o ticket? Esta ação é irreversível.", view=CloseTicketView(), ephemeral=True)
 
 
 # [MODIFICADO] BOTÂO CRIAR TICKET
@@ -388,21 +247,16 @@ class CreateTicket(discord.ui.View):
                     view=TicketAdminView()
                 )
                 
-                # OTIMIZAÇÃO: Usar typing apenas UMA vez para todo o bloco de introdução
-                async with ticket.typing():
-                    await asyncio.sleep(2.0)
-                
-                # CONSOLIDAÇÃO: Enviar todas as mensagens em sequência com pequenos sleeps (sem typing adicional)
+                async with ticket.typing(): await asyncio.sleep(1.5)
                 await ticket.send(f"Oiiie {interaction.user.mention}, **tudo bem?**")
-                await asyncio.sleep(0.5)
+                async with ticket.typing(): await asyncio.sleep(1.0)
                 await ticket.send(f"Seja muito bem-vindo(a) ao atendimento do clã **{interaction.guild.name}**!")
-                await asyncio.sleep(0.5)
+                async with ticket.typing(): await asyncio.sleep(1.5)
                 await ticket.send(f"Daqui a pouco você será **atendido** por um {atendente.mention}.")
-                await asyncio.sleep(0.5)
+                async with ticket.typing(): await asyncio.sleep(1.5)
                 await ticket.send(f"Enquanto isso, por favor, nos dê o máximo de detalhes sobre o seu caso.")
                 if mensagemcanal != "1":
                     await ticket.send(f"```{mensagemcanal}```")
-
             except discord.Forbidden:
                 print(f"ERRO DE PERMISSÃO: O bot não tem permissão para criar tópicos (threads) no canal {suporte_channel.name} (ID: {id_canal_suporte}).")
                 await interaction.followup.send("Não foi possível criar o ticket por falta de permissões. Contate um administrador.", ephemeral=True)
@@ -411,19 +265,19 @@ class CreateTicket(discord.ui.View):
                 await interaction.followup.send("Ocorreu um erro inesperado. Tente novamente mais tarde.", ephemeral=True)
 
 
-# INICIO DA CLASSE
+#INICIO DA CLASSE
 class atendimento(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
         self.client.add_view(DropdownSuporte())
-        # Apenas adicionamos a TicketAdminView que é a que o bot envia no início do ticket.
-        self.client.add_view(TicketAdminView())
+        self.client.add_view(CloseTicketView())
+        self.client.add_view(TicketAdminView()) # ADICIONA A NOVA VIEW
 
     @commands.Cog.listener()
     async def on_ready(self):
         print("Cog atendimento (Clash of Clans) carregado.")
   
-    # GRUPO PAINEIS
+    #GRUPO PAINEIS
     painel=app_commands.Group(name="painel",description="Comandos de paineis de atendimento do bot.")
 
     @painel.command(name='suporte', description='⚔️ Crie um painel de suporte para o clã.')
@@ -436,7 +290,7 @@ class atendimento(commands.Cog):
         embed.set_footer(text=f"Atendimento do Clã {interaction.guild.name}")
         await interaction.channel.send(embed=embed,view=DropdownSuporte()) 
 
-    # GRUPO DE ATENDIMENTO
+    #GRUPO DE ATENDIMENTO
     atendi=app_commands.Group(name="atendimento",description="Comandos de atendimento do bot.")
 
     @atendi.command(name="encerrar", description='✉️ Envia a mensagem final e o botão para fechar um ticket.')
@@ -454,19 +308,14 @@ class atendimento(commands.Cog):
 
         await interaction.response.send_message("Enviando mensagem de encerramento...", ephemeral=True)
         
-        # OTIMIZAÇÃO: Usar typing apenas UMA vez para todo o bloco de encerramento
-        async with interaction.channel.typing():
-             await asyncio.sleep(2.0)
-
-        # CONSOLIDAÇÃO: Enviar todas as mensagens em sequência com pequenos sleeps (sem typing adicional)
+        async with interaction.channel.typing(): await asyncio.sleep(1.5)
         await interaction.channel.send(f"Olá novamente {membro_mention}!")
-        await asyncio.sleep(1.0)
+        async with interaction.channel.typing(): await asyncio.sleep(2)
         await interaction.channel.send(f"Parece que seu atendimento está chegando ao fim.")
-        await asyncio.sleep(1.0)
+        async with interaction.channel.typing(): await asyncio.sleep(2)
         await interaction.channel.send(f"O clã **{interaction.guild.name}** agradece o contato e esperamos que seu problema tenha sido resolvido!")
         
-        # Usa a nova view de confirmação de fechamento para o usuário
-        await interaction.channel.send("Você pode **Fechar o Ticket** para arquivar a conversa, ou **Cancelar** para continuar.", view=TicketUserClosingView(interaction.channel.id))
+        await interaction.channel.send("Você pode **Fechar o Ticket** para arquivar a conversa, ou **Cancelar** para continuar.", view=CloseTicketView())
 
     @atendi.command(name="adicionar",description='➕ Adicione um membro ao ticket.')
     @app_commands.describe(membro="O membro que você deseja adicionar.")
