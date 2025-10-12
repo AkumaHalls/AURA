@@ -18,7 +18,7 @@ config_valida = True
 try:
     # VARIAVEIS NECESSARIAS
     id_cargo_atendente = int(os.getenv("id_cargo_atendente")) 
-    id_canal_suporte = int(os.getenv("id_canal_suporte")) # NOVO: ID do canal onde os tickets serão criados como tópicos (threads)
+    id_canal_suporte = int(os.getenv("id_canal_suporte")) # ID do canal onde os tickets serão criados como tópicos (threads)
     id_categoria_staff = int(os.getenv("id_categoria_staff")) 
     id_servidor_bh = int(os.getenv("id_servidor_bh")) 
     id_canal_logs_bh = int(os.getenv("id_canal_logs_bh")) 
@@ -126,7 +126,7 @@ class DropdownSuporte(discord.ui.View):
 
 
 # =========================================================================
-# NOVAS CLASSES PARA FECHAMENTO COM RESUMO E DM HUMANIZADA
+# CLASSES PARA FECHAMENTO COM RESUMO E DM HUMANIZADA
 # =========================================================================
 
 class TicketClosingModal(discord.ui.Modal, title="Fechamento e Resumo do Ticket"):
@@ -226,13 +226,21 @@ class TicketClosingModal(discord.ui.Modal, title="Fechamento e Resumo do Ticket"
             print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
 
         # 6. Delete the channel (com delay de segurança)
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(1.0) 
         try:
+            # Tenta deletar o canal.
             await channel.delete()
+            return # Se deletou, encerra a função.
         except discord.Forbidden:
-            await interaction.followup.send("❌ Erro: O bot não tem permissão para deletar este canal. O log foi salvo, mas a exclusão falhou.", ephemeral=True)
+            print(f"ERRO DE PERMISSÃO: O bot não tem permissão para deletar o canal {channel.name}.")
+            await interaction.followup.send("❌ Erro: O bot não tem permissão para deletar este canal. O log foi salvo, mas a exclusão falhou. Ajuste as permissões do bot.", ephemeral=True)
+            return
         except Exception as e:
-             await interaction.followup.send(f"❌ Erro ao deletar o canal: {e}", ephemeral=True)
+             # Isso acontece se a thread já tiver sido arquivada/deletada (muito comum).
+             print(f"AVISO: Tentativa de deletar canal falhou, provavelmente já deletado/arquivado. Erro: {e}")
+             await interaction.followup.send(f"⚠️ Aviso: O canal já foi fechado/arquivado (ou erro de permissão).", ephemeral=True)
+             return
+
 
 class TicketClosingAdminView(discord.ui.View):
     """View de Confirmação para Fechamento de Admin (Chama o Modal)."""
@@ -243,6 +251,10 @@ class TicketClosingAdminView(discord.ui.View):
     @discord.ui.button(label="Fechar e Resumir", style=discord.ButtonStyle.danger, emoji="🗑️")
     async def fechar_modal_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Abre o modal de resumo para o admin."""
+        # Se for um tópico (Thread), o bot precisa da permissão MANAGE_THREADS
+        if isinstance(interaction.channel, discord.Thread) and not interaction.guild.me.permissions_in(interaction.channel.parent).manage_threads:
+            return await interaction.response.send_message("❌ Erro: O bot precisa da permissão 'Gerenciar Tópicos' no canal principal para fechar este ticket (tópico).", ephemeral=True)
+        
         # Envia o modal para o administrador
         await interaction.response.send_modal(TicketClosingModal(self.original_channel_id))
         
@@ -262,11 +274,12 @@ class TicketUserClosingView(discord.ui.View):
     async def fechar_ticket_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         
         # 1. Defer the interaction response
-        await interaction.response.send_message(f"Okay! Salvando o histórico e fechando este ticket em 5 segundos...", ephemeral=True)
+        await interaction.response.defer(thinking=True, ephemeral=True) 
+        await interaction.followup.send(f"Okay! Salvando o histórico e fechando este ticket em 5 segundos...", ephemeral=True)
         
         channel = interaction.guild.get_channel(self.channel_id)
         if not channel:
-            return await interaction.followup.send("❌ Erro: O canal do ticket não foi encontrado. Talvez já tenha sido fechado.", ephemeral=True)
+            return await interaction.followup.send("❌ Erro: O canal do ticket não foi encontrado.", ephemeral=True)
 
         # --- LÓGICA DE SALVAMENTO ---
         log_channel = None
@@ -275,6 +288,7 @@ class TicketUserClosingView(discord.ui.View):
         elif interaction.guild.id == id_servidor_tribunal: 
             log_channel = interaction.guild.get_channel(id_canal_logs_tri)
 
+        
         if log_channel:
             log_filename = f"{channel.id}.md"
             try:
@@ -296,7 +310,21 @@ class TicketUserClosingView(discord.ui.View):
             print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
         
         await asyncio.sleep(5)
-        await channel.delete()
+        
+        # CORREÇÃO DA DELEÇÃO DE CANAL
+        try:
+             await channel.delete()
+             return # Se deletou, encerra a função.
+        except discord.Forbidden:
+             print(f"ERRO DE PERMISSÃO: O bot não tem permissão para deletar o canal {channel.name}.")
+             await interaction.followup.send("❌ Erro: O bot não tem permissão para deletar este canal. O log foi salvo, mas a exclusão falhou. **Verifique se o bot tem a permissão 'Gerenciar Tópicos'**.", ephemeral=True)
+             return
+        except Exception as e:
+             # Isso acontece se a thread já tiver sido arquivada/deletada (muito comum).
+             print(f"AVISO: Tentativa de deletar canal falhou, provavelmente já deletado/arquivado. Erro: {e}")
+             await interaction.followup.send(f"⚠️ Aviso: O canal já foi fechado/arquivado (ou erro de permissão).", ephemeral=True)
+             return
+
 
     @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="↩️")
     async def cancelar_fechar_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -416,7 +444,7 @@ class atendimento(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
         self.client.add_view(DropdownSuporte())
-        # Apenas adicionamos a TicketAdminView que é a que o bot envia no início do ticket.
+        # Adiciona as views persistentes
         self.client.add_view(TicketAdminView())
 
     @commands.Cog.listener()
@@ -443,7 +471,7 @@ class atendimento(commands.Cog):
     @commands.has_permissions(manage_roles=True)
     async def encerrar(self, interaction: discord.Interaction):
         if not isinstance(interaction.channel, discord.Thread):
-            return await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket.", ephemeral=True)
+            return await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket (Tópico).", ephemeral=True)
 
         membro_id_str = interaction.channel.name.split('-')[-1]
         try:
