@@ -169,11 +169,13 @@ class TicketClosingModal(discord.ui.Modal, title="Fechamento e Resumo do Ticket"
             try:
                 dm_channel = await membro.create_dm()
                 
-                # Mensagem humanizada com efeito de 'digitando'
+                # CORREÇÃO DE RATE LIMIT: Usar typing apenas UMA vez e enviar a DM em blocos
+                async with dm_channel.typing():
+                    await asyncio.sleep(2.0) # Simula o tempo de digitação inicial
+                
                 await dm_channel.send(f"Olá {membro.mention}, tudo bem? O seu ticket de atendimento foi finalizado. 😊")
                 
-                async with dm_channel.typing():
-                    await asyncio.sleep(2.5) # Simula o tempo de digitação
+                await asyncio.sleep(1.5) # Pequeno delay entre as mensagens
                 
                 # Mensagem final com o resumo do administrador
                 final_message = (
@@ -223,7 +225,8 @@ class TicketClosingModal(discord.ui.Modal, title="Fechamento e Resumo do Ticket"
         else:
             print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
 
-        # 6. Delete the channel
+        # 6. Delete the channel (com delay de segurança)
+        await asyncio.sleep(1.0)
         try:
             await channel.delete()
         except discord.Forbidden:
@@ -306,8 +309,6 @@ class TicketUserClosingView(discord.ui.View):
 class TicketAdminView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        # Removido custom_id para que a view não seja persistente, pois a thread será apagada em seguida.
-        # A view em si pode ser persistente, mas a instância dentro do canal não será referenciada após o uso.
         
     @discord.ui.button(label="Atender", style=discord.ButtonStyle.green, emoji="✅", custom_id="atender_ticket")
     async def atender_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -410,10 +411,8 @@ class atendimento(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
         self.client.add_view(DropdownSuporte())
-        # Removido self.client.add_view(CloseTicketView()) e adicionando as novas views:
+        # Apenas adicionamos a TicketAdminView que é a que o bot envia no início do ticket.
         self.client.add_view(TicketAdminView())
-        # A view de fechamento de admin é efêmera e não precisa ser persistente.
-        # A view de fechamento de usuário é efêmera e não precisa ser persistente.
 
     @commands.Cog.listener()
     async def on_ready(self):
