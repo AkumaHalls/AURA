@@ -7,21 +7,19 @@ from coc import errors as coc_errors
 import asyncio
 import os
 import logging
-import json
+import json # Mantido para carregar 'registrations.json'
 from datetime import datetime
 import pytz
 from dotenv import load_dotenv
 
 # --- Configuração de Logging para este Cog ---
-# Usa o mesmo padrão de logging do Clash Log original
 log_formatter = logging.Formatter('%(asctime)s-%(levelname)s-[%(funcName)s]: %(message)s')
 file_handler = logging.FileHandler("clashlog_cog.log", encoding='utf-8')
 file_handler.setFormatter(log_formatter)
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(log_formatter)
 logger = logging.getLogger("clashlog-manager-cog")
-logger.setLevel(logging.INFO) 
-# Garante que os handlers não sejam duplicados se o logger já tiver sido configurado
+logger.setLevel(logging.INFO)
 if not logger.handlers:
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
@@ -40,9 +38,37 @@ REGISTRATION_CHANNEL_ID = int(os.getenv('REGISTRATION_CHANNEL_ID', 0))
 LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID', 0))
 APPROVAL_LOG_CHANNEL_ID = int(os.getenv('APPROVAL_LOG_CHANNEL_ID', 0))
 
-CONFIG_FILE = "config.json"
+# --- MODIFICAÇÃO: Carregando Cargos e Mensagem de Kick do .env ---
+try:
+    COC_MEMBER_ROLE_ID = int(os.getenv('COC_MEMBER_ROLE_ID', 0))
+    COC_ELDER_ROLE_ID = int(os.getenv('COC_ELDER_ROLE_ID', 0))
+    COC_COLEADER_ROLE_ID = int(os.getenv('COC_COLEADER_ROLE_ID', 0))
+    KICK_MESSAGE = os.getenv('KICK_MESSAGE', "Você foi removido do servidor por não fazer mais parte do clã.")
+    
+    # Cria um dicionário 'config_roles' similar ao que existia antes
+    config_roles = {
+        "member": COC_MEMBER_ROLE_ID,
+        "admin": COC_ELDER_ROLE_ID,  # admin e elder usam o mesmo cargo
+        "elder": COC_ELDER_ROLE_ID,
+        "coleader": COC_COLEADER_ROLE_ID,
+        "leader": COC_COLEADER_ROLE_ID # coleader e leader usam o mesmo cargo
+    }
+    
+    # Validação simples
+    if not all([COC_MEMBER_ROLE_ID, COC_ELDER_ROLE_ID, COC_COLEADER_ROLE_ID]):
+         raise ValueError("IDs de cargos não encontrados no .env")
+    
+    logger.info("Configuração de cargos do Clash Log carregada do .env com sucesso.")
+    
+except (ValueError, TypeError):
+    logger.critical("ERRO CRÍTICO: IDs de Cargos (COC_MEMBER_ROLE_ID, etc.) não encontrados ou inválidos no .env.")
+    config_roles = None # Define como None para falhar as verificações
+    KICK_MESSAGE = "Você foi removido do servidor por não fazer mais parte do clã." # Padrão
+# --- FIM DA MODIFICAÇÃO ---
+
+
 REGISTRATIONS_FILE = "registrations.json"
-COC_KEY_NAME = "clashlogsbot" # Nome da chave CoC se estiver usando o sistema de chaves
+COC_KEY_NAME = "clashlogsbot"
 
 try:
     TIMEZONE = pytz.timezone('America/Sao_Paulo')
@@ -51,8 +77,6 @@ except pytz.UnknownTimeZoneError:
 
 
 # --- Variáveis de Estado Global (dentro do escopo do módulo) ---
-# 'config' agora só armazena roles e kick_message (menos voláteis ou configuráveis)
-config = {}
 registrations = {}
 coc_client = None
 
@@ -128,13 +152,14 @@ async def initialize_coc_client():
 # --- Função auxiliar para verificar e atualizar um único membro ---
 async def verify_single_member(member: discord.Member, expected_tag: str, guild: discord.Guild):
     """Verifica o status CoC de um membro específico e atualiza cargos/expulsa se necessário."""
-    global coc_client, registrations, config
+    global coc_client, registrations # Removido 'config'
 
     # Usando a TAG FIXA do .env
     clan_tag = COC_CLAN_TAG 
 
-    if not coc_client or not config or not guild or not clan_tag:
-        logger.debug(f"Pulando verificação individual para {member}: cliente CoC ou config indisponível.")
+    # MODIFICADO: Checa 'config_roles' em vez de 'config'
+    if not coc_client or not config_roles or not guild or not clan_tag:
+        logger.debug(f"Pulando verificação individual para {member}: cliente CoC ou config de cargos indisponível.")
         return
 
     discord_id_str = str(member.id)
@@ -145,14 +170,16 @@ async def verify_single_member(member: discord.Member, expected_tag: str, guild:
         member_data = clan.get_member(expected_tag)
 
         current_roles = {role.id for role in member.roles}
-        all_managed_role_ids = set(config.get("roles", {}).values())
+        # MODIFICADO: Usa 'config_roles'
+        all_managed_role_ids = set(config_roles.values())
         current_managed_roles = current_roles.intersection(all_managed_role_ids)
         log_channel = guild.get_channel(LOG_CHANNEL_ID)
 
         if member_data:
             # Membro ENCONTRADO no clã
             player_role_coc = member_data.role.in_game_name.lower()
-            expected_role_id = config.get("roles", {}).get(player_role_coc)
+            # MODIFICADO: Usa 'config_roles'
+            expected_role_id = config_roles.get(player_role_coc)
             expected_role = guild.get_role(expected_role_id) if expected_role_id else None
 
             if not expected_role:
@@ -184,7 +211,8 @@ async def verify_single_member(member: discord.Member, expected_tag: str, guild:
                  del registrations[discord_id_str]
                  save_json(registrations, REGISTRATIONS_FILE)
 
-            kick_msg = config.get("kick_message", "Você foi removido do servidor por não fazer mais parte do clã.")
+            # MODIFICADO: Usa 'KICK_MESSAGE' global
+            kick_msg = KICK_MESSAGE
             try:
                  await member.send(kick_msg)
             except discord.Forbidden:
@@ -236,12 +264,11 @@ class ClashLogManager(commands.Cog):
         """Carrega dados JSON e inicia o cliente CoC e a tarefa de loop após o bot estar pronto."""
         await self.client.wait_until_ready()
         
-        global config, registrations
+        global registrations # Removido 'config'
         
-        # Lê as configurações (só roles e kick_message) e registros
-        config = load_json(CONFIG_FILE)
+        # Lê apenas os registros
         registrations = load_json(REGISTRATIONS_FILE)
-        logger.info(f"Configurações Clash Log (roles/kick) carregadas ({len(config)} itens).")
+        # Removido load_json(CONFIG_FILE)
         logger.info(f"Registros Clash Log carregados ({len(registrations)} usuários).")
 
         if not CONFIG_VALIDA_COC:
@@ -270,9 +297,10 @@ class ClashLogManager(commands.Cog):
     @tasks.loop(hours=1)
     async def verify_members_task(self):
         """Verifica periodicamente todos os membros registrados."""
-        global coc_client, registrations, config
+        global coc_client, registrations # Removido 'config'
 
-        if not coc_client or not config or not COC_CLAN_TAG or not self.client.guilds:
+        # MODIFICADO: Checa 'config_roles'
+        if not coc_client or not config_roles or not COC_CLAN_TAG or not self.client.guilds:
             logger.warning("Pulando tarefa de verificação: Requisitos não atendidos.")
             return
 
@@ -297,7 +325,6 @@ class ClashLogManager(commands.Cog):
 
             await verify_single_member(member, player_tag, guild)
             verified_count += 1
-            # AUMENTADO para 2.0s para maior segurança contra rate limiting.
             await asyncio.sleep(2.0) 
 
         logger.info(f"--- Tarefa de Verificação Periódica Concluída. Verificados: {verified_count} membros. ---")
@@ -306,88 +333,83 @@ class ClashLogManager(commands.Cog):
     # --- Comandos Slash do Clash Log ---
     clash = app_commands.Group(name="clash", description="Comandos de gerenciamento de clã (Clash Log).")
 
-    @clash.command(name="setup", description="[Admin] Configura os cargos e mensagem de kick do bot de registro.")
-    @app_commands.describe(
-        member_role="Cargo para Membros do clã.",
-        elder_role="Cargo para Anciãos do clã.",
-        coleader_role="Cargo para Co-Líderes e Líderes do clã.",
-        kick_message="Mensagem a ser enviada ao membro ao ser expulso (opcional)."
-    )
+    # --- COMANDO SETUP MODIFICADO ---
+    @clash.command(name="setup", description="[Admin] Verifica a configuração dos canais e cargos lidos do .env.")
     @commands.has_permissions(administrator=True)
-    async def setup_command(
-        self, interaction: discord.Interaction,
-        member_role: discord.Role,
-        elder_role: discord.Role, 
-        coleader_role: discord.Role, 
-        kick_message: str = None
-    ):
-        """Comando para configurar as definições essenciais (cargos) do bot."""
-        global config
+    async def setup_command(self, interaction: discord.Interaction):
+        """Comando para VERIFICAR as configurações lidas do .env."""
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         if not interaction.user.guild_permissions.administrator:
             await interaction.followup.send("❌ Você precisa ser um administrador para usar este comando.", ephemeral=True)
             return
         
-        # Checagem de hierarquia
-        bot_member = interaction.guild.me
-        roles_to_manage = [member_role, elder_role, coleader_role]
+        # Tenta buscar os canais e cargos para menção
+        reg_channel = self.client.get_channel(REGISTRATION_CHANNEL_ID)
+        app_channel = self.client.get_channel(APPROVAL_LOG_CHANNEL_ID)
+        log_channel = self.client.get_channel(LOG_CHANNEL_ID)
         
-        for role in roles_to_manage:
-            if bot_member.top_role <= role:
-                await interaction.followup.send(f"❌ Meu cargo (`{bot_member.top_role.name}`) é igual ou inferior ao cargo `{role.name}` que preciso gerenciar. Por favor, mova meu cargo para cima.", ephemeral=True)
-                return
+        member_role = interaction.guild.get_role(COC_MEMBER_ROLE_ID)
+        elder_role = interaction.guild.get_role(COC_ELDER_ROLE_ID)
+        coleader_role = interaction.guild.get_role(COC_COLEADER_ROLE_ID)
 
-        new_config = {
-            # Tags e Canais FIXOS SÃO EXCLUÍDOS daqui e lidos do .env
-            "roles": {
-                "member": member_role.id,
-                "admin": elder_role.id, 
-                "elder": elder_role.id,
-                "coleader": coleader_role.id,
-                "leader": coleader_role.id
-            },
-            "kick_message": kick_message or "Você foi removido do servidor por não fazer mais parte do clã."
-        }
+        embed = discord.Embed(
+            title="Verificação de Configuração do Clash Log",
+            description="Esta é a configuração ATUAL carregada a partir do seu arquivo `.env` (ou variáveis de ambiente no Render).",
+            color=discord.Color.blue()
+        )
 
-        if save_json(new_config, CONFIG_FILE):
-            # Adiciona os IDs fixos do .env à config para exibição, mas eles NÃO são salvos no arquivo
-            config = new_config.copy()
-            config["clan_tag"] = COC_CLAN_TAG
-            config["registration_channel_id"] = REGISTRATION_CHANNEL_ID
-            config["approval_log_channel_id"] = APPROVAL_LOG_CHANNEL_ID
+        # Checagem de Canais
+        embed.add_field(name="Tag do Clã", value=f"`{COC_CLAN_TAG}`" if COC_CLAN_TAG else "❌ **Não definido**", inline=False)
+        embed.add_field(name="Canal de Registro", value=f"{reg_channel.mention}" if reg_channel else f"❌ **Não encontrado** (ID: `{REGISTRATION_CHANNEL_ID}`)", inline=False)
+        embed.add_field(name="Canal de Aprovações (Logs)", value=f"{log_channel.mention}" if log_channel else f"❌ **Não encontrado** (ID: `{LOG_CHANNEL_ID}`)", inline=False)
+        embed.add_field(name="Canal de Pendentes", value=f"{app_channel.mention}" if app_channel else f"❌ **Não encontrado** (ID: `{APPROVAL_LOG_CHANNEL_ID}`)", inline=False)
 
-            # Tenta buscar os canais para menção
-            reg_channel = self.client.get_channel(REGISTRATION_CHANNEL_ID)
-            app_channel = self.client.get_channel(APPROVAL_LOG_CHANNEL_ID)
+        # Checagem de Cargos
+        embed.add_field(name="Cargo Membro", value=f"{member_role.mention}" if member_role else f"❌ **Não encontrado** (ID: `{COC_MEMBER_ROLE_ID}`)", inline=False)
+        embed.add_field(name="Cargo Ancião", value=f"{elder_role.mention}" if elder_role else f"❌ **Não encontrado** (ID: `{COC_ELDER_ROLE_ID}`)", inline=False)
+        embed.add_field(name="Cargo Colíder/Líder", value=f"{coleader_role.mention}" if coleader_role else f"❌ **Não encontrado** (ID: `{COC_COLEADER_ROLE_ID}`)", inline=False)
+        
+        embed.add_field(name="Mensagem de Kick", value=f"```{KICK_MESSAGE}```", inline=False)
+
+        if all([reg_channel, app_channel, log_channel, member_role, elder_role, coleader_role, COC_CLAN_TAG]):
+            embed.color = discord.Color.green()
+            embed.set_footer(text="✅ Todas as configurações parecem estar corretas!")
             
-            confirmation_message = (
-                f"✅ Configuração do Clash Log (Cargos/Mensagem Kick) salva com sucesso!\n\n"
-                f"**Atenção: A Tag do Clã e os IDs dos Canais (Registro/Logs) são lidos DIRETAMENTE do arquivo .env e estão fixos para evitar perdas.**\n\n"
-                f" - **Clã Monitorado:** `{COC_CLAN_TAG}`\n"
-                f" - **Canal de Registro:** {reg_channel.mention if reg_channel else f'ID: `{REGISTRATION_CHANNEL_ID}` (Não encontrado)'}\n"
-                f" - **Canal de Aprovações:** {app_channel.mention if app_channel else f'ID: `{APPROVAL_LOG_CHANNEL_ID}` (Não encontrado)'}\n"
-                f" - **Cargo Membro:** {member_role.mention}\n"
-                f" - **Cargo Colíder/Líder:** {coleader_role.mention}"
-            )
-            await interaction.followup.send(confirmation_message, ephemeral=True)
+            # Checagem de hierarquia
+            bot_member = interaction.guild.me
+            roles_to_manage = [member_role, elder_role, coleader_role]
+            hierarquia_ok = True
+            for role in roles_to_manage:
+                if bot_member.top_role <= role:
+                    embed.add_field(name="⚠️ AVISO DE HIERARQUIA", value=f"Meu cargo (`{bot_member.top_role.name}`) é igual ou inferior ao cargo `{role.name}`. Não conseguirei atribuí-lo. Por favor, mova meu cargo para cima.", inline=False)
+                    embed.color = discord.Color.orange()
+                    hierarquia_ok = False
+            
+            if hierarquia_ok:
+                 embed.add_field(name="Hierarquia de Cargos", value="✅ Meu cargo é mais alto que todos os cargos de clã.", inline=False)
+
         else:
-            await interaction.followup.send("❌ Falha grave ao salvar o arquivo de configuração de cargos no disco.", ephemeral=True)
+            embed.color = discord.Color.red()
+            embed.set_footer(text="❌ Faltam configurações! Verifique as variáveis no .env do Render.")
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
     @clash.command(name="registrar", description="Solicita o registro no clã com sua tag do Clash of Clans.")
     @app_commands.describe(player_tag="Sua tag de jogador no Clash of Clans (ex: #XYZABCD).")
     async def register_command(self, interaction: discord.Interaction, player_tag: str):
         """Solicita o registro de um membro para aprovação administrativa."""
-        global coc_client, config, registrations
+        global coc_client, registrations # Removido 'config'
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         if not COC_CLAN_TAG or not REGISTRATION_CHANNEL_ID or not APPROVAL_LOG_CHANNEL_ID:
              await interaction.followup.send("❌ O Clash Log não tem sua Tag do Clã ou IDs de Canais configurados no arquivo .env. Contate um admin para preencher as variáveis CLAN_TAG, REGISTRATION_CHANNEL_ID, LOG_CHANNEL_ID e APPROVAL_LOG_CHANNEL_ID no .env.", ephemeral=True)
              return
         
-        if not config.get("roles"):
-            await interaction.followup.send("❌ Os cargos do Clash Log não foram configurados. Peça a um admin para usar `/clash setup`.", ephemeral=True)
+        # MODIFICADO: Checa 'config_roles'
+        if not config_roles:
+            await interaction.followup.send("❌ Os cargos do Clash Log não foram configurados. Peça a um admin para verificar as variáveis `COC_..._ROLE_ID` no .env e depois rodar `/clash setup` para confirmar.", ephemeral=True)
             return
             
         if not coc_client:
@@ -413,11 +435,9 @@ class ClashLogManager(commands.Cog):
         discord_id_str = str(interaction.user.id)
         if discord_id_str in registrations and registrations[discord_id_str] == corrected_tag:
              await interaction.followup.send(f"ℹ️ Você já está registrado com a tag `{corrected_tag}`.", ephemeral=True)
-             # Tenta verificar o status do membro imediatamente após a confirmação
              await verify_single_member(interaction.user, corrected_tag, interaction.guild)
              return
 
-        # Verifica se a tag já está em uso por outro usuário (prevenção contra roubo de tag)
         tag_already_registered_by_other = False
         other_user_id = None
         for reg_id, reg_tag in registrations.items():
@@ -433,7 +453,6 @@ class ClashLogManager(commands.Cog):
             return
 
         
-        # USA O ID FIXO DO .ENV
         approval_log_channel = self.client.get_channel(APPROVAL_LOG_CHANNEL_ID)
         log_channel = self.client.get_channel(LOG_CHANNEL_ID)
         
@@ -443,7 +462,6 @@ class ClashLogManager(commands.Cog):
              return
 
         try:
-            # USA A TAG FIXA DO .ENV
             clan = await asyncio.wait_for(coc_client.get_clan(COC_CLAN_TAG), timeout=30.0)
             member_data = clan.get_member(corrected_tag)
 
@@ -486,7 +504,7 @@ class ClashLogManager(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def aprovar_command(self, interaction: discord.Interaction, usuario: discord.Member, player_tag: str):
         """Aprova um registro pendente, verifica novamente o cargo e atribui."""
-        global coc_client, config, registrations
+        global coc_client, registrations # Removido 'config'
         
         if not interaction.user.guild_permissions.administrator:
              await interaction.response.send_message("❌ Apenas administradores podem usar este comando.", ephemeral=True)
@@ -494,7 +512,8 @@ class ClashLogManager(commands.Cog):
 
         await interaction.response.defer(ephemeral=True, thinking=True)
         
-        if not config.get("roles") or not coc_client:
+        # MODIFICADO: Checa 'config_roles'
+        if not config_roles or not coc_client:
             await interaction.followup.send("❌ O Clash Log não está configurado (cargos) ou o cliente CoC não está pronto. Tente novamente.", ephemeral=True)
             return
 
@@ -506,7 +525,6 @@ class ClashLogManager(commands.Cog):
              return
 
         try:
-            # USA A TAG FIXA DO .ENV
             clan = await asyncio.wait_for(coc_client.get_clan(COC_CLAN_TAG), timeout=30.0)
             member_data = clan.get_member(corrected_tag)
 
@@ -517,14 +535,14 @@ class ClashLogManager(commands.Cog):
 
             player_name = member_data.name
             player_role_coc = member_data.role.in_game_name.lower()
-            role_id_to_assign = config.get("roles", {}).get(player_role_coc)
+            # MODIFICADO: Usa 'config_roles'
+            role_id_to_assign = config_roles.get(player_role_coc)
             role_to_assign = interaction.guild.get_role(role_id_to_assign) if role_id_to_assign else None
 
             if not role_to_assign:
                 await interaction.followup.send("❌ Falha na aprovação: O cargo Discord para este cargo CoC não está configurado ou não foi encontrado.", ephemeral=True)
                 return
 
-            # Executa a lógica de atribuição/remoção de cargos do membro
             await verify_single_member(usuario, corrected_tag, interaction.guild)
 
             registrations[str(usuario.id)] = corrected_tag
@@ -538,7 +556,7 @@ class ClashLogManager(commands.Cog):
             try:
                 await usuario.send(f"🎉 Seu registro no servidor **{interaction.guild.name}** foi aprovado! Você recebeu o cargo **{role_to_assign.name}**.")
             except discord.Forbidden:
-                pass # Ignora se não puder enviar DM
+                pass
 
         except coc_errors.ClashOfClansException as e:
             logger.error(f"Erro API CoC na aprovação: {e}")
