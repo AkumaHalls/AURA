@@ -73,8 +73,8 @@ class Autorole(commands.Cog):
                     await membro.add_roles(cargo_membro, reason="Autorole por palavra-chave 'Liberar'.")
                     print(f"Cargo '{cargo_membro.name}' adicionado para {membro.name}.")
                     
-                    # Ação 2: Reagir para dar feedback imediato
-                    await message.add_reaction("✅")
+                    # Ação 2: Reagir para dar feedback imediato (Como solicitado)
+                    await message.add_reaction("✅") # Este é o :white_check_mark:
 
                 except discord.Forbidden:
                     print(f"ERRO DE PERMISSÃO: Não foi possível adicionar o cargo '{cargo_membro.name}' para {membro.name} OU reagir à mensagem.")
@@ -88,14 +88,16 @@ class Autorole(commands.Cog):
                     await message.add_reaction("⚠️")
                     return
 
-                # Ação 3: Enviar a mensagem de boas-vindas
+                # Ação 3: Enviar a mensagem de boas-vindas (Como solicitado)
                 try:
                     async with message.channel.typing():
-                        await asyncio.sleep(1.5)
+                        await asyncio.sleep(1.0) # Tempo de digitação reduzido
                     
-                    mensagem_boas_vindas = await message.channel.send(f"Oiiie {membro.mention}, seja muito bem-vindo(a)! Seu registro foi liberado com sucesso. Explore o servidor! ✨")
+                    # --- MENSAGEM MELHORADA AQUI ---
+                    mensagem_boas_vindas = await message.channel.send(f"✅ Acesso liberado, {membro.mention}! Seu registro foi validado e as portas do clã estão abertas. Seja bem-vindo(a)!")
                     
-                    await asyncio.sleep(20)
+                    # Tempo de exclusão da mensagem alterado para 5 minutos
+                    await asyncio.sleep(300) 
                     await mensagem_boas_vindas.delete()
                 
                 except discord.Forbidden:
@@ -103,10 +105,10 @@ class Autorole(commands.Cog):
                 except Exception as e:
                     print(f"ERRO inesperado ao enviar/apagar a mensagem de boas-vindas: {e}")
             else:
+                # Se o membro já tinha o cargo, apenas reage para confirmar que viu
                 await message.add_reaction("👍")
 
 
 async def setup(client: commands.Bot) -> None:
     """Função para carregar a Cog no bot."""
     await client.add_cog(Autorole(client))
-
