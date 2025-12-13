@@ -51,6 +51,7 @@ try:
         "admin": COC_ELDER_ROLE_ID,  # admin e elder usam o mesmo cargo
         "elder": COC_ELDER_ROLE_ID,
         "coleader": COC_COLEADER_ROLE_ID,
+        "co-leader": COC_COLEADER_ROLE_ID, # Adicionado para compatibilidade com a API
         "leader": COC_COLEADER_ROLE_ID # coleader e leader usam o mesmo cargo
     }
     
