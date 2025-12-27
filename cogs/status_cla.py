@@ -44,7 +44,8 @@ class StatusCla(commands.Cog):
 
     async def connect_coc(self):
         """Gerencia a conexão com a API do Clash of Clans."""
-        if self.coc_client and self.coc_client.http.session:
+        # CORREÇÃO AQUI: Removida a verificação de .session que causava o erro
+        if self.coc_client:
             return
 
         try:
@@ -54,6 +55,7 @@ class StatusCla(commands.Cog):
             print("StatusCla: Conectado à API do Clash of Clans.")
         except Exception as e:
             print(f"StatusCla: Erro ao conectar no CoC: {e}")
+            self.coc_client = None # Garante que tente conectar novamente na próxima vez se falhar
 
     def cog_unload(self):
         """Limpeza ao desligar o bot."""
