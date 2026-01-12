@@ -10,27 +10,25 @@ from discord.ext import commands, tasks
 from discord import app_commands
 from dotenv import load_dotenv
 
-# Carrega variáveis do arquivo .env
+# Carrega variáveis
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-# Tenta pegar as credenciais do CoC. 
 COC_EMAIL = os.getenv("COC_EMAIL")
 COC_PASSWORD = os.getenv("COC_PASSWORD")
 CLAN_TAG = os.getenv("CLAN_TAG")
 
-# Arquivo onde o bot salva os IDs dos canais criados para não perder a referência
 CONFIG_FILE = "status_channels.json"
+CATEGORY_NAME = "📊 Status do Clã"
 
 class StatusCla(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
         self.coc_client = None
-        self.channel_ids = self.load_config()
-        # Inicia a tarefa de atualização automática
+        self.channel_ids = {} # Começa vazio, carrega depois
         self.update_status_task.start()
 
     def load_config(self):
-        """Carrega a configuração salva dos canais."""
+        """Tenta carregar do arquivo. Se falhar, retorna vazio."""
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r") as f:
@@ -40,157 +38,157 @@ class StatusCla(commands.Cog):
         return {}
 
     def save_config(self):
-        """Salva a configuração dos canais."""
+        """Salva a configuração no disco (útil enquanto a VPS não reinicia)."""
         with open(CONFIG_FILE, "w") as f:
             json.dump(self.channel_ids, f, indent=4)
 
-    async def connect_coc(self):
-        """Gerencia a conexão com a API do Clash of Clans."""
-        if self.coc_client:
-            return
+    async def try_recover_config(self):
+        """Tenta encontrar os canais no Discord se o arquivo de config sumiu."""
+        print("StatusCla: Tentando recuperar configuração dos canais existentes no Discord...")
+        
+        # Procura no primeiro servidor disponível (ou configure um ID fixo se preferir)
+        guild = self.client.guilds[0] if self.client.guilds else None
+        if not guild:
+            return False
 
+        # Procura a categoria pelo nome
+        category = discord.utils.get(guild.categories, name=CATEGORY_NAME)
+        if not category:
+            print("StatusCla: Categoria não encontrada. Necessário rodar /setup-status.")
+            return False
+
+        new_config = {"guild_id": guild.id, "category_id": category.id}
+        
+        # Mapeia emojis para chaves de config
+        emoji_map = {
+            "👥": "membros_id",
+            "⭐": "nivel_id",
+            "🏆": "trofeus_id",
+            "⚔️": "guerras_id",
+            "🔥": "streak_id",
+            "🕒": "data_id"
+        }
+
+        found_count = 0
+        for channel in category.voice_channels:
+            # Verifica o primeiro caractere (emoji) do nome do canal
+            first_char = channel.name.split(" ")[0] # Pega o que está antes do primeiro espaço
+            
+            if first_char in emoji_map:
+                key = emoji_map[first_char]
+                new_config[key] = channel.id
+                found_count += 1
+
+        if found_count >= 3: # Se achou pelo menos 3 canais, considera recuperado
+            self.channel_ids = new_config
+            self.save_config()
+            print(f"StatusCla: Recuperação bem-sucedida! {found_count} canais reconectados.")
+            return True
+        
+        return False
+
+    async def connect_coc(self):
+        """Gerencia conexão CoC."""
+        if self.coc_client: return
         try:
-            # Login simples com email e senha
             self.coc_client = coc.Client(key_count=1, key_names="StatusBotKey", throttle_limit=20)
             await self.coc_client.login(COC_EMAIL, COC_PASSWORD)
-            print("StatusCla: Conectado à API do Clash of Clans.")
+            print("StatusCla: Conectado ao CoC.")
         except Exception as e:
-            print(f"StatusCla: Erro ao conectar no CoC: {e}")
-            self.coc_client = None 
+            print(f"StatusCla: Erro login CoC: {e}")
+            self.coc_client = None
 
     def cog_unload(self):
-        """Limpeza ao desligar o bot."""
         self.update_status_task.cancel()
         if self.coc_client:
             asyncio.create_task(self.coc_client.close())
 
-    # --- TAREFA AUTOMÁTICA (Loop a cada 10 minutos) ---
+    # --- TAREFA ---
     @tasks.loop(minutes=10)
     async def update_status_task(self):
-        # Só roda se houver canais configurados
+        # 1. Se não tem configuração, tenta carregar do arquivo
         if not self.channel_ids:
-            return
+            self.channel_ids = self.load_config()
+        
+        # 2. Se ainda não tem configuração (arquivo sumiu no restart), tenta recuperar do Discord
+        if not self.channel_ids:
+            if not await self.try_recover_config():
+                # Se falhar a recuperação, para por aqui até alguém rodar setup
+                return
 
         await self.connect_coc()
-        if not self.coc_client:
-            print("StatusCla: Cliente CoC não conectado. Pulando atualização.")
-            return
+        if not self.coc_client: return
 
         try:
-            # Busca os dados do clã
             clan = await self.coc_client.get_clan(CLAN_TAG)
-            
             guild_id = self.channel_ids.get("guild_id")
             guild = self.client.get_guild(guild_id)
 
-            if not guild:
-                print(f"StatusCla: Servidor ID {guild_id} não encontrado.")
-                return
+            if not guild: return
 
-            # Pega o horário atual em SP
             tz = pytz.timezone('America/Sao_Paulo')
-            horario_atual = datetime.now(tz).strftime("%d/%m às %H:%M")
+            horario = datetime.now(tz).strftime("%d/%m %H:%M")
 
-            # Lista dos dados para atualizar
             stats = {
                 "membros_id": f"👥 Membros: {clan.member_count}/50",
                 "nivel_id": f"⭐ Nível: {clan.level}",
                 "trofeus_id": f"🏆 Troféus: {clan.points}",
                 "guerras_id": f"⚔️ Guerras Ganhas: {clan.war_wins}",
                 "streak_id": f"🔥 Win Streak: {clan.war_win_streak}",
-                "data_id": f"🕒 Atualizado: {horario_atual}" # NOVO CANAL
+                "data_id": f"🕒 Atualizado: {horario}"
             }
 
-            # Atualiza cada canal
-            for key, new_name in stats.items():
-                channel_id = self.channel_ids.get(key)
-                if channel_id:
-                    channel = guild.get_channel(channel_id)
-                    if channel:
-                        # Verifica se o nome mudou para evitar spam na API do Discord
-                        if channel.name != new_name:
-                            await channel.edit(name=new_name)
-                            # Pequeno delay para evitar Rate Limit do Discord
-                            await asyncio.sleep(1) 
-                    else:
-                        print(f"StatusCla: Canal {key} (ID: {channel_id}) não encontrado no servidor.")
+            for key, name in stats.items():
+                cid = self.channel_ids.get(key)
+                if cid:
+                    channel = guild.get_channel(cid)
+                    if channel and channel.name != name:
+                        await channel.edit(name=name)
+                        await asyncio.sleep(1)
 
         except Exception as e:
-            print(f"StatusCla: Erro ao atualizar status: {e}")
-            traceback.print_exc() # Imprime o erro completo no log
+            print(f"Erro update: {e}")
+            traceback.print_exc()
 
-    # Adicionado para garantir que o bot esteja pronto antes de começar
     @update_status_task.before_loop
-    async def before_update_status(self):
+    async def before_update(self):
         await self.client.wait_until_ready()
 
-    # Adicionado para mostrar erros críticos caso o loop quebre
-    @update_status_task.error
-    async def update_status_error(self, error):
-        print(f"StatusCla: O loop de atualização parou devido a um erro:")
-        traceback.print_exception(type(error), error, error.__traceback__)
-
-    # --- COMANDO SLASH: SETUP ---
-    @app_commands.command(name="setup-status", description="[Admin] Cria o painel de status do clã automaticamente.")
+    # --- COMANDOS ---
+    @app_commands.command(name="setup-status", description="[Admin] Cria o painel de status.")
     @commands.has_permissions(administrator=True)
     async def setup_status(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
-
-        if not COC_EMAIL or not CLAN_TAG:
-            await interaction.followup.send("❌ Erro: Configure `COC_EMAIL`, `COC_PASSWORD` e `CLAN_TAG` no seu `.env` primeiro.", ephemeral=True)
-            return
-
+        await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
-        
-        # Configura permissão para ninguém entrar nos canais de voz
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(connect=False)
-        }
-        
-        try:
-            # Cria a categoria
-            categoria = await guild.create_category("📊 Status do Clã", overwrites=overwrites)
-            
-            # Cria os canais iniciais
-            c_membros = await guild.create_voice_channel("👥 Carregando...", category=categoria)
-            c_nivel = await guild.create_voice_channel("⭐ Carregando...", category=categoria)
-            c_trofeus = await guild.create_voice_channel("🏆 Carregando...", category=categoria)
-            c_guerras = await guild.create_voice_channel("⚔️ Carregando...", category=categoria)
-            c_streak = await guild.create_voice_channel("🔥 Carregando...", category=categoria)
-            # Cria o canal de data/hora
-            c_data = await guild.create_voice_channel("🕒 Aguardando atualização...", category=categoria)
+        overwrites = {guild.default_role: discord.PermissionOverwrite(connect=False)}
 
-            # Salva os IDs no arquivo json
+        try:
+            cat = await guild.create_category(CATEGORY_NAME, overwrites=overwrites)
+            c_mem = await guild.create_voice_channel("👥 Carregando...", category=cat)
+            c_niv = await guild.create_voice_channel("⭐ Carregando...", category=cat)
+            c_tro = await guild.create_voice_channel("🏆 Carregando...", category=cat)
+            c_gue = await guild.create_voice_channel("⚔️ Carregando...", category=cat)
+            c_str = await guild.create_voice_channel("🔥 Carregando...", category=cat)
+            c_dat = await guild.create_voice_channel("🕒 Aguardando...", category=cat)
+
             self.channel_ids = {
-                "guild_id": guild.id,
-                "category_id": categoria.id,
-                "membros_id": c_membros.id,
-                "nivel_id": c_nivel.id,
-                "trofeus_id": c_trofeus.id,
-                "guerras_id": c_guerras.id,
-                "streak_id": c_streak.id,
-                "data_id": c_data.id # Salva o ID do novo canal
+                "guild_id": guild.id, "category_id": cat.id,
+                "membros_id": c_mem.id, "nivel_id": c_niv.id,
+                "trofeus_id": c_tro.id, "guerras_id": c_gue.id,
+                "streak_id": c_str.id, "data_id": c_dat.id
             }
             self.save_config()
-            
-            # Força a atualização imediata
-            if self.update_status_task.is_running():
-                self.update_status_task.restart()
-            else:
-                self.update_status_task.start()
-
-            await interaction.followup.send("✅ Painel de Status criado! Aguarde alguns instantes para os nomes atualizarem.", ephemeral=True)
-
+            self.update_status_task.restart()
+            await interaction.followup.send("✅ Painel criado!", ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"❌ Erro ao criar canais: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
 
-    # --- COMANDO SLASH: DELETAR ---
-    @app_commands.command(name="delete-status", description="[Admin] Remove o painel de status da memória do bot.")
+    @app_commands.command(name="delete-status", description="[Admin] Deleta painel.")
     @commands.has_permissions(administrator=True)
     async def delete_status(self, interaction: discord.Interaction):
         self.channel_ids = {}
         self.save_config()
-        await interaction.response.send_message("✅ O bot parou de atualizar o painel. Você pode deletar os canais manualmente agora.", ephemeral=True)
+        await interaction.response.send_message("✅ Parado. Delete os canais manualmente.", ephemeral=True)
 
 async def setup(client: commands.Bot):
     await client.add_cog(StatusCla(client))
