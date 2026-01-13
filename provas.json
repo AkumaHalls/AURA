@@ -1,0 +1,339 @@
+{
+  "config": {
+    "acertos_para_aprovar": 8,
+    "total_questoes_aplicadas": 10,
+    "tempo_cooldown_dias": 3
+  },
+  "questoes": [
+    {
+      "id": 1,
+      "pergunta": "Nas Guerras de Liga (CWL), qual é a regra ABSOLUTA sobre quem atacar?",
+      "alternativas": [
+        "Ataque quem você garantir 3 estrelas.",
+        "Ataque o número recomendado pelo jogo.",
+        "Ataque apenas o seu espelho (mesma posição), salvo com autorização da liderança.",
+        "Ataque qualquer base que ainda não foi fechada."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 2,
+      "pergunta": "Quantos ataques são obrigatórios em Guerras Normais e qual a consequência de não fazê-los?",
+      "alternativas": [
+        "1 ataque é obrigatório. Sem punição.",
+        "2 ataques. A ausência sem aviso pode gerar remoção imediata (MR01).",
+        "Ataques são opcionais se a guerra já estiver ganha.",
+        "2 ataques, mas apenas se seus heróis estiverem ativos."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 3,
+      "pergunta": "Qual é o limite de dias para inatividade sem aviso prévio antes da remoção?",
+      "alternativas": [
+        "3 dias.",
+        "7 dias.",
+        "5 dias.",
+        "10 dias."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 4,
+      "pergunta": "Um membro pede cargo de Colíder no chat geral. Segundo as regras, qual é a punição?",
+      "alternativas": [
+        "Ele recebe uma advertência verbal.",
+        "Ele é banido sem aviso prévio.",
+        "Ele perde o cargo atual (rebaixamento).",
+        "A liderança analisa o perfil dele para promoção."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 5,
+      "pergunta": "Você é Staff e precisa remover um membro que atacou o alvo errado na Guerra (não atacou o espelho). Qual código MR você usa?",
+      "alternativas": [
+        "MR01 (Falta de ataques).",
+        "MR03 (Atacar bases fora do alvo designado).",
+        "MR05 (Heróis em melhoria).",
+        "MR10 (Comportamento tóxico)."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 6,
+      "pergunta": "Qual a regra sobre a participação no servidor do Discord do Clã?",
+      "alternativas": [
+        "É opcional, entra quem quer.",
+        "É obrigatório apenas para Colíderes.",
+        "É obrigatório para todos (MR12).",
+        "É obrigatório apenas durante a CWL."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 7,
+      "pergunta": "Um membro entrou na CWL com o escudo verde (disponível), mas estava com heróis em melhoria. Qual código define essa infração?",
+      "alternativas": [
+        "MR05",
+        "MR02",
+        "MR13",
+        "MR09"
+      ],
+      "correta": 0
+    },
+    {
+      "id": 8,
+      "pergunta": "Sobre doações, o que é exigido dos membros do B.A.D?",
+      "alternativas": [
+        "Apenas doar o máximo possível, não importa o que recebe.",
+        "Não é necessário doar, apenas pedir.",
+        "Manter o equilíbrio entre doar e receber.",
+        "Doar apenas para a liderança."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 9,
+      "pergunta": "Qual código MR é aplicado para contas consideradas 'rushadas' (nível incompatível com a defesa/ataque)?",
+      "alternativas": [
+        "MR10",
+        "MR14",
+        "MR06",
+        "MR13"
+      ],
+      "correta": 3
+    },
+    {
+      "id": 10,
+      "pergunta": "O que acontece se um membro atacar outro número na CWL sem a autorização da liderança?",
+      "alternativas": [
+        "Expulsão imediata, sem aviso prévio.",
+        "Recebe uma advertência.",
+        "Deve compensar doando tropas.",
+        "Fica de fora da próxima guerra apenas."
+      ],
+      "correta": 0
+    },
+    {
+      "id": 11,
+      "pergunta": "Qual código você usaria para remover alguém fazendo recrutamento para outro clã ou spam no chat?",
+      "alternativas": [
+        "MR10",
+        "MR11",
+        "MR14",
+        "MR12"
+      ],
+      "correta": 2
+    },
+    {
+      "id": 12,
+      "pergunta": "Sobre os Jogos do Clã, qual infração gera a punição MR08?",
+      "alternativas": [
+        "Não atingir a pontuação mínima.",
+        "Não participar de nenhuma tarefa.",
+        "Pegar recompensas e sair do clã.",
+        "Fazer tarefas muito fáceis."
+      ],
+      "correta": 0
+    },
+    {
+      "id": 13,
+      "pergunta": "Em Guerras Normais (fora de liga), como funciona a escolha de alvos?",
+      "alternativas": [
+        "Ataque apenas o espelho.",
+        "Ataques são livres: escolha um oponente que encaixe no seu nível/estratégia.",
+        "Aguarde a liderança marcar o alvo no mapa.",
+        "Ataque sempre o número 1 do mapa inimigo."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 14,
+      "pergunta": "Qual destas atitudes NÃO é um critério para promoção no clã?",
+      "alternativas": [
+        "Participação ativa em guerras.",
+        "Doações equilibradas.",
+        "Ser amigo pessoal do Líder.",
+        "Comportamento exemplar."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 15,
+      "pergunta": "O que caracteriza a infração MR09?",
+      "alternativas": [
+        "Inatividade geral.",
+        "Baixa taxa de doações.",
+        "Não participar dos Fim de Semana de Raide.",
+        "Comportamento tóxico."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 16,
+      "pergunta": "O que um membro deve garantir antes de colocar o escudo 'Verde' (Disponível) para Guerra?",
+      "alternativas": [
+        "Que possui gemas suficientes para doar.",
+        "Que seus heróis não estão em melhoria e ele tem tempo para atacar.",
+        "Que ele quer ganhar o bônus de saque.",
+        "Que o layout da vila é bonito."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 17,
+      "pergunta": "Em guerras normais (não-CWL), o que significa 'atacar com consciência'?",
+      "alternativas": [
+        "Atacar o primeiro da lista para ganhar mais saque.",
+        "Atacar apenas quando o líder estiver online.",
+        "Escolher um oponente compatível com seu nível, garantindo as estrelas (estratégia).",
+        "Esperar o fim da guerra para atacar vilas fáceis."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 18,
+      "pergunta": "Por que atacar um alvo MUITO abaixo do seu nível (dip) sem necessidade pode prejudicar o clã?",
+      "alternativas": [
+        "Porque você ganha pouco ouro.",
+        "Porque o jogo bloqueia o ataque.",
+        "Porque tira o alvo de um membro mais fraco e desperdiça um ataque forte.",
+        "Porque o inimigo pode se vingar."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 19,
+      "pergunta": "Na CWL, em qual única situação a liderança autoriza um ataque fora do espelho?",
+      "alternativas": [
+        "Quando o membro não gosta do layout do espelho.",
+        "Quando há uma estratégia explícita para maximizar estrelas (troca de alvos).",
+        "Quando o espelho já foi atacado por engano.",
+        "Nunca é autorizado."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 20,
+      "pergunta": "Como a liderança verifica rapidamente se houve violação de alvo na CWL?",
+      "alternativas": [
+        "Perguntando no chat.",
+        "Comparando o número do jogador na lista com o número da vila atacada (Espelho).",
+        "Vendo o replay do ataque.",
+        "Não há como verificar."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 21,
+      "pergunta": "Por que é crucial manter um padrão de doações (equilíbrio) no B.A.D?",
+      "alternativas": [
+        "Para subir de nível de XP rapidamente.",
+        "Para garantir que todos tenham tropas para defesa/ataque e evitar 'sanguessugas'.",
+        "Para competir quem doa mais.",
+        "Porque o Clash of Clans obriga."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 22,
+      "pergunta": "O que caracteriza a 'reincidência' na regra de doações (MR07)?",
+      "alternativas": [
+        "Doar errado uma única vez.",
+        "Continuar apenas pedindo tropas e não doando, mesmo após receber advertência.",
+        "Pedir tropas muito caras.",
+        "Doar tropas de nível baixo para defesa."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 23,
+      "pergunta": "Se você precisa se ausentar por mais de 5 dias, o que deve fazer para evitar o MR06?",
+      "alternativas": [
+        "Sair do clã e voltar depois.",
+        "Ficar quieto e torcer para ninguém notar.",
+        "Avisar a liderança com antecedência (preferencialmente via Discord).",
+        "Doar todas as tropas antes de sair."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 24,
+      "pergunta": "Por que o 'tempo de clã' é um fator para promoções?",
+      "alternativas": [
+        "Porque mostra que o jogador é velho.",
+        "Porque demonstra lealdade, consistência e entendimento da cultura do clã.",
+        "Não é fator, apenas ataque importa.",
+        "Porque o jogo dá gemas por tempo."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 25,
+      "pergunta": "Mesmo participando das guerras, o que pode IMPEDIR sua promoção?",
+      "alternativas": [
+        "Ter poucas gemas.",
+        "Comportamento tóxico (MR10), falta de doações ou desrespeito.",
+        "Não atacar em Raides.",
+        "Ter o Centro de Vila nível máximo."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 26,
+      "pergunta": "Por que pedir cargo é considerado falta grave e gera banimento?",
+      "alternativas": [
+        "Porque o chat fica poluído.",
+        "Porque cargos são conquistados por mérito e disciplina, não por insistência.",
+        "Porque o Líder não gosta de conversar.",
+        "Porque custa recursos promover alguém."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 27,
+      "pergunta": "Qual o procedimento correto de um Líder ao remover alguém usando códigos MR?",
+      "alternativas": [
+        "Banir silenciosamente.",
+        "Xingar o membro e banir.",
+        "Identificar a infração, enviar a mensagem padrão com o código [MRxx] e remover.",
+        "Pedir votação no chat geral."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 28,
+      "pergunta": "O clã é '100% focado em guerras'. O que isso significa para sua estratégia de ataque?",
+      "alternativas": [
+        "Deve-se focar em roubar Elixir Negro.",
+        "A prioridade é sempre garantir estrelas e vitória para o clã, não o saque pessoal.",
+        "Deve-se atacar apenas vilas com muito Ouro.",
+        "O foco é apenas completar desafios do passe."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 29,
+      "pergunta": "Qual a principal utilidade dos Códigos MR para a gestão do clã?",
+      "alternativas": [
+        "Parecer um clã militar.",
+        "Manter a organização, transparência e justificar remoções sem discussões longas.",
+        "Assustar os membros novos.",
+        "É apenas estético."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 30,
+      "pergunta": "Por que o Discord é tratado como ferramenta essencial (MR12)?",
+      "alternativas": [
+        "Para ouvir música.",
+        "Para comunicação persistente, avisos de guerra, logs e testes como este.",
+        "Para compartilhar memes.",
+        "Não é essencial, é opcional."
+      ],
+      "correta": 1
+    }
+  ]
+}
