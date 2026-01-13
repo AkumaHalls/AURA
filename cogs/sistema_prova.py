@@ -8,7 +8,7 @@ from discord.ext import commands
 from discord import app_commands, ui
 
 # --- CONFIGURAÇÃO ---
-ID_CANAL_BACKUP = 123456789012345678 # Ajuste conforme necessário
+ID_CANAL_BACKUP = 123456789012345678 # ID do canal de logs
 
 # --- CLASSES DE INTERFACE ---
 class IntroView(ui.View):
@@ -71,17 +71,15 @@ class SistemaProva(commands.Cog):
         self.client = client
         self.cooldowns = {} 
         self.questoes_data = {} 
-        self.erro_detalhado = None # Variável para guardar o erro exato
 
     async def carregar_provas(self):
-        """Tenta carregar o JSON e guarda o erro se falhar"""
-        self.erro_detalhado = None
+        """Carrega o JSON assumindo que ele está corretamente em UTF-8"""
         try:
-            # Tenta 3 estratégias de caminho para garantir que acha o arquivo
+            # Lógica inteligente para achar o arquivo na raiz
             caminhos_tentativa = [
-                "provas.json", # Na pasta de trabalho atual
-                os.path.join(os.getcwd(), "provas.json"), # Absoluto da raiz
-                os.path.join(os.path.dirname(__file__), '..', 'provas.json') # Relativo à Cog
+                "provas.json",
+                os.path.join(os.getcwd(), "provas.json"),
+                os.path.join(os.path.dirname(__file__), '..', 'provas.json')
             ]
 
             arquivo_encontrado = None
@@ -91,23 +89,17 @@ class SistemaProva(commands.Cog):
                     break
             
             if not arquivo_encontrado:
-                # Se não achar, lista os arquivos da pasta para sabermos o que tem lá
-                arquivos_locais = os.listdir(os.getcwd())
-                self.erro_detalhado = f"Arquivo 'provas.json' não encontrado.\n📂 Diretório atual: `{os.getcwd()}`\n📄 Arquivos visíveis: `{arquivos_locais}`"
-                print(self.erro_detalhado)
+                print(f"SistemaProva: ERRO CRÍTICO - Arquivo 'provas.json' não encontrado na raiz.")
                 return
 
+            # Aqui lemos direto em UTF-8 (O padrão correto)
             with open(arquivo_encontrado, 'r', encoding='utf-8') as f:
                 self.questoes_data = json.load(f)
             
-            print(f"SistemaProva: Sucesso lendo de {arquivo_encontrado}")
+            print(f"SistemaProva: Banco de questões carregado de: {arquivo_encontrado}")
 
-        except json.JSONDecodeError as e:
-            self.erro_detalhado = f"O arquivo 'provas.json' existe mas está com erro de digitação (vírgula ou chave errada).\nErro: `{e}`"
-            print(self.erro_detalhado)
         except Exception as e:
-            self.erro_detalhado = f"Erro inesperado ao abrir arquivo: `{e}`"
-            print(self.erro_detalhado)
+            print(f"SistemaProva: Erro ao ler arquivo: {e}")
 
     async def carregar_backup_cooldowns(self):
         await self.client.wait_until_ready()
@@ -137,52 +129,15 @@ class SistemaProva(commands.Cog):
         await self.carregar_provas()
         await self.carregar_backup_cooldowns()
 
-    # --- COMANDO DE DIAGNÓSTICO ---
-    @app_commands.command(name="debug-provas", description="[Admin] Verifica onde está o arquivo de provas.")
-    @commands.has_permissions(administrator=True)
-    async def debug_provas(self, interaction: discord.Interaction):
-        await self.carregar_provas() # Força recarregamento
-        
-        embed = discord.Embed(title="🕵️ Diagnóstico do Sistema de Provas", color=discord.Color.orange())
-        embed.add_field(name="Diretório de Trabalho", value=f"`{os.getcwd()}`", inline=False)
-        
-        # Lista arquivos na raiz
-        try:
-            files = os.listdir(os.getcwd())
-            files_str = ", ".join([f for f in files if f.endswith('.json') or f.endswith('.py')])
-            embed.add_field(name="Arquivos na Raiz", value=f"`{files_str[:1000]}`", inline=False)
-        except:
-            embed.add_field(name="Arquivos na Raiz", value="Erro ao listar.", inline=False)
-
-        if self.questoes_data:
-            qtd = len(self.questoes_data.get('questoes', []))
-            embed.add_field(name="Status", value=f"✅ **Carregado com Sucesso!**\nQuestões encontradas: {qtd}", inline=False)
-            embed.color = discord.Color.green()
-        else:
-            erro = self.erro_detalhado or "Erro desconhecido."
-            embed.add_field(name="Status", value=f"❌ **Falha ao Carregar**", inline=False)
-            embed.add_field(name="Detalhe do Erro", value=erro[:1024], inline=False)
-            embed.color = discord.Color.red()
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
     @app_commands.command(name="iniciar-prova", description="Inicia o teste para Co-Líder.")
     async def iniciar_prova(self, interaction: discord.Interaction):
-        # Tenta carregar se estiver vazio
+        # Se o banco estiver vazio, tenta carregar de novo
         if not self.questoes_data:
             await self.carregar_provas()
-            
-            # SE FALHAR DE NOVO, MOSTRA O ERRO PRO USUARIO
             if not self.questoes_data:
-                erro_msg = self.erro_detalhado or "Erro interno desconhecido."
-                await interaction.response.send_message(
-                    f"⚠️ **Erro Técnico:** Não foi possível carregar o banco de questões.\n\n**O que aconteceu:**\n{erro_msg}\n\n*Avise o programador.*", 
-                    ephemeral=True
-                )
+                await interaction.response.send_message("⚠️ **Erro:** O sistema de provas está offline (arquivo não carregado). Avise um Admin.", ephemeral=True)
                 return
 
-        # Lógica normal da prova continua aqui...
         user_id = str(interaction.user.id)
         if user_id in self.cooldowns:
             data_liberacao = datetime.fromisoformat(self.cooldowns[user_id])
@@ -265,7 +220,7 @@ class SistemaProva(commands.Cog):
         await dm_channel.send(embed=embed_user)
 
         try:
-            log_channel = self.client.get_channel(810674051277651980) # ID DO SEU LOG AQUI
+            log_channel = self.client.get_channel(810674051277651980) 
             if log_channel:
                 embed_admin = discord.Embed(title=f"📑 Relatório: {interaction.user.name}", color=cor)
                 embed_admin.add_field(name="Nota", value=f"{acertos}/{len(questoes_selecionadas)}")
