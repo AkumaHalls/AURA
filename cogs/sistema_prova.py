@@ -8,9 +8,10 @@ from discord.ext import commands
 from discord import app_commands, ui
 
 # --- CONFIGURAÇÃO ---
-ID_CANAL_BACKUP = 123456789012345678 # ID do canal de logs
+ID_CANAL_BACKUP = 123456789012345678 
 
 # --- CLASSES DE INTERFACE ---
+
 class IntroView(ui.View):
     def __init__(self):
         super().__init__(timeout=300)
@@ -66,40 +67,42 @@ class ProvaView(ui.View):
         self.stop()
 
 # --- CLASSE PRINCIPAL ---
+
 class SistemaProva(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
         self.cooldowns = {} 
         self.questoes_data = {} 
+        self.last_error = None # Guarda o último erro para mostrar no comando
 
     async def carregar_provas(self):
-        """Carrega o JSON assumindo que ele está corretamente em UTF-8"""
+        self.last_error = None
         try:
-            # Lógica inteligente para achar o arquivo na raiz
-            caminhos_tentativa = [
-                "provas.json",
-                os.path.join(os.getcwd(), "provas.json"),
-                os.path.join(os.path.dirname(__file__), '..', 'provas.json')
-            ]
-
-            arquivo_encontrado = None
-            for caminho in caminhos_tentativa:
-                if os.path.exists(caminho):
-                    arquivo_encontrado = caminho
-                    break
+            # Tenta encontrar o arquivo na raiz (subindo de cogs/ para raiz)
+            caminho_arquivo = os.path.join(os.path.dirname(__file__), '..', 'provas.json')
             
-            if not arquivo_encontrado:
-                print(f"SistemaProva: ERRO CRÍTICO - Arquivo 'provas.json' não encontrado na raiz.")
+            if not os.path.exists(caminho_arquivo):
+                # Tenta no diretório atual (fallback)
+                caminho_arquivo = "provas.json"
+
+            if not os.path.exists(caminho_arquivo):
+                self.last_error = f"Arquivo 'provas.json' não encontrado nos caminhos: {os.getcwd()}"
+                print(f"SistemaProva: {self.last_error}")
                 return
 
-            # Aqui lemos direto em UTF-8 (O padrão correto)
-            with open(arquivo_encontrado, 'r', encoding='utf-8') as f:
+            # 'utf-8-sig' resolve problemas de arquivos salvos com BOM (comum no Notepad)
+            with open(caminho_arquivo, 'r', encoding='utf-8-sig') as f:
                 self.questoes_data = json.load(f)
             
-            print(f"SistemaProva: Banco de questões carregado de: {arquivo_encontrado}")
+            print(f"SistemaProva: Questões carregadas com sucesso!")
 
+        except json.JSONDecodeError as e:
+            # Este erro acontece se você esqueceu uma vírgula ou aspas no arquivo
+            self.last_error = f"Erro de Sintaxe no JSON:\nLinha {e.lineno}, Coluna {e.colno}\nErro: {e.msg}"
+            print(f"SistemaProva: {self.last_error}")
         except Exception as e:
-            print(f"SistemaProva: Erro ao ler arquivo: {e}")
+            self.last_error = f"Erro desconhecido: {e}"
+            print(f"SistemaProva: {self.last_error}")
 
     async def carregar_backup_cooldowns(self):
         await self.client.wait_until_ready()
@@ -131,11 +134,14 @@ class SistemaProva(commands.Cog):
 
     @app_commands.command(name="iniciar-prova", description="Inicia o teste para Co-Líder.")
     async def iniciar_prova(self, interaction: discord.Interaction):
-        # Se o banco estiver vazio, tenta carregar de novo
+        # Tenta carregar se estiver vazio
         if not self.questoes_data:
             await self.carregar_provas()
+            
+            # SE FALHAR, MOSTRA O MOTIVO EXATO PRO USUÁRIO
             if not self.questoes_data:
-                await interaction.response.send_message("⚠️ **Erro:** O sistema de provas está offline (arquivo não carregado). Avise um Admin.", ephemeral=True)
+                erro = self.last_error or "Erro desconhecido."
+                await interaction.response.send_message(f"🚨 **Não foi possível carregar a prova!**\n\n**Diagnóstico:**\n`{erro}`\n\n*Verifique o arquivo provas.json*", ephemeral=True)
                 return
 
         user_id = str(interaction.user.id)
@@ -220,6 +226,7 @@ class SistemaProva(commands.Cog):
         await dm_channel.send(embed=embed_user)
 
         try:
+            # LOGS: Altere o ID abaixo pelo canal correto de logs da staff
             log_channel = self.client.get_channel(810674051277651980) 
             if log_channel:
                 embed_admin = discord.Embed(title=f"📑 Relatório: {interaction.user.name}", color=cor)
