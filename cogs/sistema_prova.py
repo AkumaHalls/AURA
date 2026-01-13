@@ -9,7 +9,6 @@ from discord import app_commands, ui
 
 # --- CONFIGURAÇÃO ---
 # ID do canal onde o bot vai salvar o arquivo de cooldowns
-# DICA: Coloque isso no .env como BACKUP_CHANNEL_ID para segurança
 ID_CANAL_BACKUP = 123456789012345678 
 
 # --- CLASSES DE INTERFACE (VIEWS) ---
@@ -43,11 +42,8 @@ class ProvaView(ui.View):
         self.value = None
         self.questao = questao
         
-        # Calcula o Timestamp futuro para o contador regressivo do Discord
-        # O Discord usa timestamp UNIX (segundos)
         timestamp_fim = int(datetime.now().timestamp() + TEMPO_POR_QUESTAO)
         
-        # Embaralha as alternativas
         alternativas_com_indice = list(enumerate(questao['alternativas']))
         random.shuffle(alternativas_com_indice)
         
@@ -82,14 +78,18 @@ class SistemaProva(commands.Cog):
         self.questoes_data = {} 
 
     async def carregar_provas(self):
-        """Lê o arquivo estático do GitHub/Pasta"""
+        """Lê o arquivo estático do GitHub/Pasta usando caminho absoluto"""
         try:
-            if os.path.exists('provas.json'):
-                with open('provas.json', 'r', encoding='utf-8') as f:
+            # CORREÇÃO AQUI: Garante que pega o arquivo na raiz, subindo um nível (..)
+            caminho_provas = os.path.join(os.path.dirname(__file__), '..', 'provas.json')
+            caminho_provas = os.path.abspath(caminho_provas)
+
+            if os.path.exists(caminho_provas):
+                with open(caminho_provas, 'r', encoding='utf-8') as f:
                     self.questoes_data = json.load(f)
-                print("SistemaProva: Questões carregadas com sucesso.")
+                print(f"SistemaProva: Questões carregadas com sucesso de: {caminho_provas}")
             else:
-                print("SistemaProva: AVISO - Arquivo provas.json não encontrado.")
+                print(f"SistemaProva: AVISO - Arquivo não encontrado no caminho: {caminho_provas}")
         except Exception as e:
             print(f"SistemaProva: Erro ao ler provas.json: {e}")
 
@@ -145,7 +145,7 @@ class SistemaProva(commands.Cog):
         if not self.questoes_data:
             await self.carregar_provas()
             if not self.questoes_data:
-                await interaction.response.send_message("❌ Erro: Banco de questões não carregado.", ephemeral=True)
+                await interaction.response.send_message("❌ Erro: Banco de questões não carregado. Verifique os logs do console.", ephemeral=True)
                 return
             
         config = self.questoes_data['config']
@@ -193,10 +193,8 @@ class SistemaProva(commands.Cog):
         for i, questao in enumerate(questoes_selecionadas):
             view = ProvaView(questao, len(questoes_selecionadas), i+1)
             
-            # Envia a questão com o contador
             msg_pergunta = await dm_channel.send(embed=view.embed, view=view)
             
-            # Espera resposta
             await view.wait()
             
             if view.value is None:
@@ -216,8 +214,7 @@ class SistemaProva(commands.Cog):
                     "correta": alternativas[questao['correta']]
                 })
             
-            # Limpa o dropdown e remove o contador para não ficar confuso no histórico
-            view.embed.description = f"**{questao['pergunta']}**" # Remove o contador do texto final
+            view.embed.description = f"**{questao['pergunta']}**" 
             view.embed.set_footer(text="Respondida.")
             await msg_pergunta.edit(view=None, embed=view.embed)
             
