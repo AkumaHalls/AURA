@@ -16,9 +16,6 @@ COC_EMAIL = os.getenv("COC_EMAIL")
 COC_PASSWORD = os.getenv("COC_PASSWORD")
 CLAN_TAG = os.getenv("CLAN_TAG")
 
-# Texto base para procurar a categoria (ignora emojis)
-CATEGORY_PARTIAL_NAME = "Status do Clã"
-
 class StatusCla(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
@@ -27,11 +24,9 @@ class StatusCla(commands.Cog):
         self.update_status_task.start()
 
     async def connect_coc(self):
-        """Gerencia conexão CoC e reconexão se cair."""
         try:
             if self.coc_client and self.coc_client.http.session:
-                 return # Já conectado
-
+                 return 
             self.coc_client = coc.Client(key_count=1, key_names="StatusBotKey", throttle_limit=20)
             await self.coc_client.login(COC_EMAIL, COC_PASSWORD)
             print("StatusCla: Conectado ao CoC API.")
@@ -44,26 +39,37 @@ class StatusCla(commands.Cog):
         if self.coc_client:
             asyncio.create_task(self.coc_client.close())
 
-    async def find_channels_automatically(self):
-        """Tenta encontrar os canais automaticamente procurando por 'Status do Clã'."""
-        if not self.client.guilds: 
-            print("StatusCla: Nenhum servidor encontrado.")
-            return False
+    async def find_channels_automatically(self, interaction=None):
+        """
+        Tenta encontrar os canais.
+        Se interaction for passado, envia logs de debug para o admin ver o que está havendo.
+        """
+        if not self.client.guilds: return False, "Bot não está em nenhum servidor."
         
-        guild = self.client.guilds[0] # Pega o primeiro servidor
+        guild = self.client.guilds[0]
         
-        # 1. Procura a Categoria pelo nome parcial (contém "Status do Clã")
+        # 1. Busca Flexível (Ignora Case e Emojis)
         category = None
+        categorias_visiveis = [] # Para debug
+
         for cat in guild.categories:
-            if CATEGORY_PARTIAL_NAME in cat.name:
+            nome_limpo = cat.name.lower() # Transforma tudo em minúsculo
+            categorias_visiveis.append(cat.name) # Guarda o nome original para mostrar no erro
+            
+            # Se tiver "status" E "clã" no nome, achamos!
+            if "status" in nome_limpo and "clã" in nome_limpo:
+                category = cat
+                break
+            # Fallback: Tenta sem o til (clã -> cla) caso a codificação esteja estranha
+            if "status" in nome_limpo and "cla" in nome_limpo:
                 category = cat
                 break
         
         if not category:
-            print(f"StatusCla: Categoria contendo '{CATEGORY_PARTIAL_NAME}' não encontrada.")
-            return False
+            lista_str = "\n".join(categorias_visiveis[:10]) # Mostra as 10 primeiras
+            return False, f"Não encontrei a categoria 'Status do Clã'.\n\n🔎 **O que o bot está vendo:**\n{lista_str}\n\n⚠️ **Dica:** Verifique se o Bot tem permissão 'Ver Canal' na categoria."
 
-        # Mapeamento: Emoji -> Chave Interna
+        # Mapeamento
         emoji_map = {
             "👥": "membros_id",
             "⭐": "nivel_id",
@@ -74,29 +80,27 @@ class StatusCla(commands.Cog):
         }
 
         found = {}
-        # Procura canais dentro da categoria
+        # Procura canais dentro da categoria encontrada
+        canais_vistos = []
         for channel in category.voice_channels:
-            # Verifica se o emoji está no nome do canal
+            canais_vistos.append(channel.name)
             for emoji, key in emoji_map.items():
                 if emoji in channel.name:
                     found[key] = channel.id
         
-        # Só atualiza se achou a maioria dos canais
         if len(found) >= 3:
             self.channel_ids = found
             self.channel_ids["guild_id"] = guild.id
-            print(f"StatusCla: Recuperação automática bem sucedida! Canais encontrados: {len(found)}")
-            return True
+            return True, f"Sucesso! Encontrei a categoria '{category.name}' e {len(found)} canais."
         
-        print(f"StatusCla: Canais insuficientes encontrados na categoria '{category.name}'. Encontrados: {len(found)}")
-        return False
+        return False, f"Achei a categoria '{category.name}', mas não os canais.\nCanais vistos: {', '.join(canais_vistos)}"
 
-    async def perform_update_logic(self):
-        """Lógica separada de atualização para usar no loop e no force-update"""
-        # 1. Tenta recuperar os canais se a lista estiver vazia
+    async def perform_update_logic(self, interaction=None):
+        # 1. Tenta recuperar canais (passando interaction para debug se houver)
         if not self.channel_ids:
-            if not await self.find_channels_automatically():
-                return "❌ Erro: Não encontrei a categoria 'Status do Clã' ou os canais."
+            success, msg = await self.find_channels_automatically(interaction)
+            if not success:
+                return f"❌ Erro de Localização: {msg}"
 
         # 2. Conecta no CoC
         await self.connect_coc()
@@ -104,17 +108,16 @@ class StatusCla(commands.Cog):
             return "❌ Erro: Falha na conexão com a API do Clash."
 
         try:
-            # 3. Pega dados do Clã
+            # 3. Pega dados
             clan = await self.coc_client.get_clan(CLAN_TAG)
             
             guild_id = self.channel_ids.get("guild_id")
             guild = self.client.get_guild(guild_id)
-            if not guild: return "❌ Erro: Servidor Discord não encontrado."
+            if not guild: return "❌ Erro: Servidor Discord sumiu."
 
             tz = pytz.timezone('America/Sao_Paulo')
             horario = datetime.now(tz).strftime("%d/%m %H:%M")
 
-            # 4. Define os novos nomes
             stats = {
                 "membros_id": f"👥 Membros: {clan.member_count}/50",
                 "nivel_id": f"⭐ Nível: {clan.level}",
@@ -125,7 +128,6 @@ class StatusCla(commands.Cog):
             }
 
             updated_count = 0
-            # 5. Aplica a atualização
             for key, new_name in stats.items():
                 cid = self.channel_ids.get(key)
                 if cid:
@@ -135,16 +137,13 @@ class StatusCla(commands.Cog):
                         updated_count += 1
                         await asyncio.sleep(1.5) 
             
-            if updated_count > 0:
-                return f"✅ Sucesso! {updated_count} canais atualizados para {horario}."
-            else:
-                return f"✅ Dados verificados. Nenhuma alteração necessária (tudo atualizado)."
+            return f"✅ Atualização concluída! {updated_count} canais modificados. (Hora: {horario})"
 
         except Exception as e:
             traceback.print_exc()
             return f"❌ Erro durante atualização: {e}"
 
-    # --- TAREFA PRINCIPAL ---
+    # --- TAREFA AUTOMÁTICA ---
     @tasks.loop(minutes=10)
     async def update_status_task(self):
         await self.perform_update_logic()
@@ -162,46 +161,46 @@ class StatusCla(commands.Cog):
         overwrites = {guild.default_role: discord.PermissionOverwrite(connect=False, view_channel=True)}
 
         try:
-            # Procura categoria existente parcial
+            # Tenta achar categoria existente
             cat = None
             for c in guild.categories:
-                if CATEGORY_PARTIAL_NAME in c.name:
+                if "status" in c.name.lower() and "clã" in c.name.lower():
                     cat = c
                     break
             
             if cat:
-                await interaction.followup.send(f"⚠️ Encontrei a categoria '{cat.name}'. Tentando usar ela...", ephemeral=True)
+                await interaction.followup.send(f"⚠️ Já existe a categoria '{cat.name}'.", ephemeral=True)
             else:
                 cat = await guild.create_category("📊 Status do Clã", overwrites=overwrites)
+                # Cria canais
+                c_mem = await guild.create_voice_channel("👥 Carregando...", category=cat)
+                c_niv = await guild.create_voice_channel("⭐ Carregando...", category=cat)
+                c_tro = await guild.create_voice_channel("🏆 Carregando...", category=cat)
+                c_gue = await guild.create_voice_channel("⚔️ Carregando...", category=cat)
+                c_str = await guild.create_voice_channel("🔥 Carregando...", category=cat)
+                c_dat = await guild.create_voice_channel("🕒 Aguardando...", category=cat)
 
-            # Cria canais
-            c_mem = await guild.create_voice_channel("👥 Carregando...", category=cat)
-            c_niv = await guild.create_voice_channel("⭐ Carregando...", category=cat)
-            c_tro = await guild.create_voice_channel("🏆 Carregando...", category=cat)
-            c_gue = await guild.create_voice_channel("⚔️ Carregando...", category=cat)
-            c_str = await guild.create_voice_channel("🔥 Carregando...", category=cat)
-            c_dat = await guild.create_voice_channel("🕒 Aguardando...", category=cat)
-
-            self.channel_ids = {
-                "guild_id": guild.id, 
-                "membros_id": c_mem.id, "nivel_id": c_niv.id,
-                "trofeus_id": c_tro.id, "guerras_id": c_gue.id,
-                "streak_id": c_str.id, "data_id": c_dat.id
-            }
-            
+            # Força update para pegar os IDs
+            resultado = await self.perform_update_logic(interaction)
             self.update_status_task.restart()
-            await interaction.followup.send("✅ Painel configurado! A primeira atualização ocorre em instantes.", ephemeral=True)
+            
+            await interaction.followup.send(f"✅ Setup finalizado!\nResultado: {resultado}", ephemeral=True)
             
         except Exception as e:
-            await interaction.followup.send(f"❌ Erro ao criar: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
 
     @app_commands.command(name="force-update", description="[Admin] Força atualização e mostra diagnóstico.")
     @commands.has_permissions(administrator=True)
     async def force_update(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        # Executa a lógica e pega a mensagem de resultado
-        resultado = await self.perform_update_logic()
-        await interaction.followup.send(f"📢 **Relatório de Atualização:**\n{resultado}", ephemeral=True)
+        # Passa a interaction para que o log de erro saia detalhado
+        resultado = await self.perform_update_logic(interaction)
+        
+        # Cria um Embed bonitinho com o resultado
+        color = discord.Color.green() if "✅" in resultado else discord.Color.red()
+        embed = discord.Embed(title="Relatório de Atualização", description=resultado, color=color)
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(client: commands.Bot):
     await client.add_cog(StatusCla(client))
