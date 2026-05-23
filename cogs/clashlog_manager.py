@@ -131,11 +131,19 @@ async def initialize_coc_client():
             else:
                  logger.error(f"[Tentativa {attempt}/3] Login CoC OK, mas sessão HTTP falhou.")
                  await temp_client.close()
-        except coc_errors.AuthenticationError as e_auth:
+        except coc_errors.InvalidCredentials as e_auth:
             logger.error(f"[Tentativa {attempt}/3] Falha de autenticação CoC: {e_auth}. Verifique email/senha.")
+            if 'temp_client' in locals() and temp_client:
+                await temp_client.close()
             return False
         except asyncio.TimeoutError:
             logger.error(f"[Tentativa {attempt}/3] Timeout durante o login CoC.")
+            if 'temp_client' in locals() and temp_client:
+                await temp_client.close()
+        except KeyError as e_key:
+            logger.error(f"[Tentativa {attempt}/3] Erro na API CoC (KeyError): {e_key}. Tentando novamente...")
+            if 'temp_client' in locals() and temp_client:
+                await temp_client.close()
         except Exception as e_login:
             logger.error(f"[Tentativa {attempt}/3] Erro inesperado no login CoC: {e_login}", exc_info=True)
             if 'temp_client' in locals() and temp_client:
@@ -232,7 +240,7 @@ async def verify_single_member(member: discord.Member, expected_tag: str, guild:
             except Exception as e_kick:
                  logger.error(f"Erro inesperado ao expulsar {member}: {e_kick}")
 
-    except coc_errors.AuthenticationError:
+    except coc_errors.InvalidCredentials:
         logger.critical(f"Erro de autenticação CoC durante verificação. Tentando relogar...")
         await initialize_coc_client()
     except coc_errors.ClashOfClansException as e_coc:
