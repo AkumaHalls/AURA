@@ -12,7 +12,7 @@
     <div class="p-0">
         {% if provas %}
         <table class="table table-hover mb-0">
-            <thead><tr><th>Usuário</th><th>ID</th><th>Nota</th><th>Resultado</th><th>Data</th></tr></thead>
+            <thead><tr><th>Usuário</th><th>ID</th><th>Nota</th><th>Resultado</th><th>Data</th><th></th></tr></thead>
             <tbody>
             {% for p in provas %}
             <tr>
@@ -21,6 +21,13 @@
                 <td>{{ p.score }}/{{ p.total }}</td>
                 <td>{% if p.passed %}<span class="badge badge-aprovado">APROVADO</span>{% else %}<span class="badge badge-reprovado">REPROVADO</span>{% endif %}</td>
                 <td style="color:#6b7280;">{{ p.date[:19]|replace('T', ' ') }}</td>
+                <td>
+                    <form method="POST" onsubmit="return confirm('Deletar esta prova?')" style="display:inline">
+                        <input type="hidden" name="user_id" value="{{ p.user_id }}">
+                        <input type="hidden" name="date" value="{{ p.date }}">
+                        <button type="submit" class="btn btn-sm" style="background:transparent;border:none;color:#f87171;padding:0;"><i class="bi bi-trash"></i></button>
+                    </form>
+                </td>
             </tr>
             {% endfor %}
             </tbody>

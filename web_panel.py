@@ -55,9 +55,19 @@ def dashboard():
                                stats={"total_provas": 0, "aprovados": 0, "reprovados": 0, "total_tickets": 0},
                                provas_recentes=[]), 200
 
-@app.route('/provas')
+@app.route('/provas', methods=['GET', 'POST'])
 @login_required
 def provas():
+    if request.method == 'POST':
+        from mongo_db import deletar_prova
+        user_id = request.form.get('user_id')
+        date = request.form.get('date')
+        if user_id and date:
+            ok = deletar_prova(user_id, date)
+            flash('Prova deletada com sucesso.' if ok else 'Erro ao deletar prova.', 'success' if ok else 'danger')
+        else:
+            flash('Dados insuficientes para deletar.', 'danger')
+        return redirect(url_for('provas'))
     try:
         from mongo_db import listar_provas
         todas = listar_provas(200)
@@ -65,9 +75,19 @@ def provas():
         todas = []
     return render_template('provas.html', active='provas', provas=todas)
 
-@app.route('/tickets')
+@app.route('/tickets', methods=['GET', 'POST'])
 @login_required
 def tickets():
+    if request.method == 'POST':
+        from mongo_db import deletar_ticket
+        user_id = request.form.get('user_id')
+        data = request.form.get('data')
+        if user_id and data:
+            ok = deletar_ticket(user_id, data)
+            flash('Ticket deletado com sucesso.' if ok else 'Erro ao deletar ticket.', 'success' if ok else 'danger')
+        else:
+            flash('Dados insuficientes para deletar.', 'danger')
+        return redirect(url_for('tickets'))
     try:
         from mongo_db import listar_tickets
         todos = listar_tickets(200)

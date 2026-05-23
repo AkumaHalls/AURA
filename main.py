@@ -8,6 +8,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Conecta ao MongoDB (antes de tudo para estar disponível nos cogs e no web panel)
+from mongo_db import conectar
+conectar()
+
 # Inicia o painel web em uma thread separada
 import threading
 from web_panel import run_web_panel

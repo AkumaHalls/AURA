@@ -30,8 +30,16 @@ def conectar():
 def get_db():
     return db
 
+def _garantir_conexao():
+    if db is None:
+        print("MongoDB: db era None, tentando reconectar...")
+        conectar()
+
 def salvar_prova(user_id, user_name, score, total, passed, respostas):
-    if not db: return
+    _garantir_conexao()
+    if not db:
+        print("MongoDB: Não foi possível salvar prova (sem conexão)")
+        return
     try:
         db.provas.insert_one({
             "user_id": str(user_id),
@@ -42,11 +50,15 @@ def salvar_prova(user_id, user_name, score, total, passed, respostas):
             "respostas": respostas,
             "date": datetime.now().isoformat()
         })
+        print(f"MongoDB: Prova de {user_name} salva ({score}/{total})")
     except Exception as e:
         print(f"Erro ao salvar prova no MongoDB: {e}")
 
 def salvar_ticket(user_id, user_name, tipo, status, atendente=None):
-    if not db: return
+    _garantir_conexao()
+    if not db:
+        print("MongoDB: Não foi possível salvar ticket (sem conexão)")
+        return
     try:
         db.tickets.insert_one({
             "user_id": str(user_id),
@@ -56,11 +68,15 @@ def salvar_ticket(user_id, user_name, tipo, status, atendente=None):
             "atendente": atendente,
             "data": datetime.now().isoformat()
         })
+        print(f"MongoDB: Ticket de {user_name} salvo ({tipo})")
     except Exception as e:
         print(f"Erro ao salvar ticket no MongoDB: {e}")
 
 def atualizar_ticket(user_id, status, atendente=None):
-    if not db: return
+    _garantir_conexao()
+    if not db:
+        print("MongoDB: Não foi possível atualizar ticket (sem conexão)")
+        return
     try:
         update = {"status": status}
         if atendente:
@@ -87,6 +103,24 @@ def listar_tickets(limite=50):
     except Exception as e:
         print(f"Erro ao listar tickets: {e}")
         return []
+
+def deletar_prova(user_id, date):
+    if not db: return False
+    try:
+        r = db.provas.delete_one({"user_id": str(user_id), "date": date})
+        return r.deleted_count > 0
+    except Exception as e:
+        print(f"Erro ao deletar prova: {e}")
+        return False
+
+def deletar_ticket(user_id, data):
+    if not db: return False
+    try:
+        r = db.tickets.delete_one({"user_id": str(user_id), "data": data})
+        return r.deleted_count > 0
+    except Exception as e:
+        print(f"Erro ao deletar ticket: {e}")
+        return False
 
 def stats_dashboard():
     if not db: return {"total_provas": 0, "aprovados": 0, "reprovados": 0, "total_tickets": 0}

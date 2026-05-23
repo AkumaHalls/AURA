@@ -285,7 +285,7 @@ class CreateTicket(discord.ui.View):
 
 
 # Canal onde as transcrições de tickets antigos estão armazenadas
-ID_CANAL_TRANSCRICOES = 1362127333636706466
+ID_CANAL_TRANSCRICOES = int(os.getenv("ID_CANAL_TRANSCRICOES", "1362127333636706466"))
 
 EMOJI_PARA_TIPO = {
     "📜": "Dúvidas sobre Regras",

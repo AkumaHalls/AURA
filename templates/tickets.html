@@ -12,7 +12,7 @@
     <div class="p-0">
         {% if tickets %}
         <table class="table table-hover mb-0">
-            <thead><tr><th>Usuário</th><th>Tipo</th><th>Status</th><th>Atendente</th><th>Data</th></tr></thead>
+            <thead><tr><th>Usuário</th><th>Tipo</th><th>Status</th><th>Atendente</th><th>Data</th><th></th></tr></thead>
             <tbody>
             {% for t in tickets %}
             <tr>
@@ -21,6 +21,13 @@
                 <td>{% if t.status == 'aberto' %}<span class="badge" style="background:#1a3a3a;color:#22d3ee;">Aberto</span>{% else %}<span class="badge" style="background:#1a1a3a;color:#818cf8;">Fechado</span>{% endif %}</td>
                 <td>{{ t.atendente or '—' }}</td>
                 <td style="color:#6b7280;">{{ t.data[:19]|replace('T', ' ') }}</td>
+                <td>
+                    <form method="POST" onsubmit="return confirm('Deletar este ticket?')" style="display:inline">
+                        <input type="hidden" name="user_id" value="{{ t.user_id }}">
+                        <input type="hidden" name="data" value="{{ t.data }}">
+                        <button type="submit" class="btn btn-sm" style="background:transparent;border:none;color:#f87171;padding:0;"><i class="bi bi-trash"></i></button>
+                    </form>
+                </td>
             </tr>
             {% endfor %}
             </tbody>
