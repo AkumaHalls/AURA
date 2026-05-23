@@ -12,29 +12,40 @@ mensagemerro = getmensagemerro()
 #CARREGA E LE O ARQUIVO .env na raiz
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env')) #load .env da raiz
 
-# Flag para verificar se a configuração é válida
-config_valida = True
+# Função auxiliar para ler env vars de inteiros sem crashar
+def _get_env_int(name, default=None):
+    val = os.getenv(name)
+    if val is None or val.strip() == "":
+        return default
+    try:
+        return int(val.strip())
+    except ValueError:
+        return default
 
-try:
-    #VARIAVEIS NECESSARIAS
-    id_cargo_atendente = int(os.getenv("id_cargo_atendente")) 
-    id_canal_suporte = int(os.getenv("id_canal_suporte")) # NOVO: ID do canal onde os tickets serão criados como tópicos (threads)
-    id_categoria_staff = int(os.getenv("id_categoria_staff")) 
-    id_servidor_bh = int(os.getenv("id_servidor_bh")) 
-    id_canal_logs_bh = int(os.getenv("id_canal_logs_bh")) 
-    id_canal_avaliacao = int(os.getenv("id_canal_avaliacao"))
+# Carrega cada variável individualmente (tolera ausência)
+id_cargo_atendente = _get_env_int("id_cargo_atendente")
+id_canal_suporte = _get_env_int("id_canal_suporte")
+id_categoria_staff = _get_env_int("id_categoria_staff")
+id_servidor_bh = _get_env_int("id_servidor_bh")
+id_canal_logs_bh = _get_env_int("id_canal_logs_bh")
+id_canal_avaliacao = _get_env_int("id_canal_avaliacao")
+id_servidor_tribunal = _get_env_int("id_servidor_tribunal")
+id_canal_logs_tri = _get_env_int("id_canal_logs_tri")
 
-    #Parte do Segundo servidor (se houver)
-    id_servidor_tribunal= int(os.getenv("id_servidor_tribunal"))
-    id_canal_logs_tri= int(os.getenv("id_canal_logs_tri"))
-
-except (ValueError, TypeError) as e:
-    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-    print("!!! ERRO CRÍTICO AO CARREGAR CONFIGURAÇÕES DE ATENDIMENTO                   !!!")
-    print("!!! Verifique se TODAS as variáveis de ambiente (IDs) estão definidas.      !!!")
-    print(f"!!! Erro específico: {e}                                      !!!")
-    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-    config_valida = False
+# Mostra quais estão faltando (sem travar o cog)
+_var_faltando = [k for k, v in [
+    ("id_cargo_atendente", id_cargo_atendente),
+    ("id_canal_suporte", id_canal_suporte),
+    ("id_categoria_staff", id_categoria_staff),
+    ("id_servidor_bh", id_servidor_bh),
+    ("id_canal_logs_bh", id_canal_logs_bh),
+    ("id_canal_avaliacao", id_canal_avaliacao),
+    ("id_servidor_tribunal", id_servidor_tribunal),
+    ("id_canal_logs_tri", id_canal_logs_tri),
+] if v is None]
+if _var_faltando:
+    print(f"⚠️ ATENDIMENTO: Variáveis de ambiente NÃO configuradas: {', '.join(_var_faltando)}")
+    print("   Comandos de ticket não funcionarão até preencher essas vars no Portainer.")
 
 
 #Variaveis de USO GLOBAL
@@ -444,7 +455,8 @@ class atendimento(commands.Cog):
             await interaction.followup.send(f"❌ Erro ao importar: {e}", ephemeral=True)
 
 async def setup(client:commands.Bot):
-    if config_valida:
-        await client.add_cog(atendimento(client))
+    await client.add_cog(atendimento(client))
+    if _var_faltando:
+        print(f"⚡ Cog atendimento CARREGADO, mas recursos limitados. Faltam: {_var_faltando}")
     else:
-        print("O Cog 'atendimento' não foi carregado devido a um erro de configuração nas variáveis de ambiente.")
+        print("✅ Cog atendimento carregado com sucesso.")

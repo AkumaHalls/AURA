@@ -7,11 +7,21 @@ services:
       - "2501:2501"
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DONO_ID=${DONO_ID}
       - OWNER_ID=${OWNER_ID}
+      - TEST_GUILD_ID=${TEST_GUILD_ID}
       - COC_EMAIL=${COC_EMAIL}
       - COC_PASSWORD=${COC_PASSWORD}
       - CLAN_TAG=${CLAN_TAG}
       - MONGO_URI=${MONGO_URI}
       - WEB_PANEL_PASSWORD=${WEB_PANEL_PASSWORD}
       - ID_CANAL_TRANSCRICOES=${ID_CANAL_TRANSCRICOES}
+      - id_cargo_atendente=${id_cargo_atendente}
+      - id_canal_suporte=${id_canal_suporte}
+      - id_categoria_staff=${id_categoria_staff}
+      - id_servidor_bh=${id_servidor_bh}
+      - id_canal_logs_bh=${id_canal_logs_bh}
+      - id_canal_avaliacao=${id_canal_avaliacao}
+      - id_servidor_tribunal=${id_servidor_tribunal}
+      - id_canal_logs_tri=${id_canal_logs_tri}
       - TZ=America/Sao_Paulo

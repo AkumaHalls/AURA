@@ -10,19 +10,30 @@ MONGO_URI = os.getenv("MONGO_URI")
 client = None
 db = None
 
+def _mongo_uri_placeholder(val):
+    """Ofusca parte da URI do MongoDB para logs seguros."""
+    if not val:
+        return "None"
+    at = val.find("@")
+    if at > 0:
+        return "mongodb://***@" + val[at+1:]
+    return val[:50] + "..." if len(val) > 50 else val
+
 def conectar():
     global client, db
     if not MONGO_URI:
-        print("MONGO_URI não configurado. MongoDB não disponível.")
+        print("MONGO_URI não configurado. MongoDB não disponível. Painel web sem dados.")
         return False
     try:
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        print(f"Tentando conectar ao MongoDB: {_mongo_uri_placeholder(MONGO_URI)}")
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=10000)
         client.admin.command('ping')
         db = client.get_database("aura_bot")
-        print("Conectado ao MongoDB com sucesso.")
+        print("✅ Conectado ao MongoDB com sucesso.")
         return True
     except Exception as e:
-        print(f"Erro ao conectar MongoDB: {e}")
+        print(f"❌ Erro ao conectar MongoDB: {e}")
+        print(f"   URI: {_mongo_uri_placeholder(MONGO_URI)}")
         client = None
         db = None
         return False

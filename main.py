@@ -57,7 +57,16 @@ class Client(commands.Bot):
         await self.wait_until_ready()
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Bem vindo"))  # Define o status do bot
         if not self.synced:
-            await self.tree.sync()  # Sincroniza comandos de barra (slash)
+            test_guild_id = os.getenv("TEST_GUILD_ID")
+            if test_guild_id:
+                try:
+                    guild = discord.Object(id=int(test_guild_id))
+                    await self.tree.sync(guild=guild)
+                    print(f"Comandos sincronizados para guild {test_guild_id} (TEST_GUILD_ID)")
+                except:
+                    await self.tree.sync()
+            else:
+                await self.tree.sync()  # Global sync (lento, até 1h)
             self.synced = True
             print(f"Comandos sincronizados: {self.synced}")
         print(f"\nO bot {self.user} já está online e disponível.")
