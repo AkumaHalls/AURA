@@ -177,6 +177,17 @@ def clan():
         error = f"Erro: {e}"
     return render_template('clan.html', active='clan', clan_data=dados, error=error)
 
+@app.route('/sync')
+@login_required
+def sync_commands():
+    try:
+        with open('sync_signal.txt', 'w') as f:
+            f.write('1')
+        flash('Sinal de sincronização enviado! O bot vai limpar o cache de comandos e re-sincronizar nos próximos segundos.', 'success')
+    except Exception as e:
+        flash(f'Erro ao enviar sinal: {e}', 'danger')
+    return redirect(url_for('dashboard'))
+
 def run_web_panel():
     if not PANEL_PASSWORD:
         print("WEB_PANEL_PASSWORD não configurado. Painel web desabilitado.")

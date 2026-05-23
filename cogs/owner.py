@@ -42,21 +42,6 @@ class onwer(commands.Cog):
         """Evento que é acionado quando a Cog está pronta."""
         print("Cog onwer carregado.")
 
-    @commands.command(name="sync", aliases=["synccmds"])
-    async def prefix_sync(self, ctx: commands.Context):
-        """Limpa cache de comandos slash e re-sincroniza globalmente."""
-        if ctx.author.id != donoid:
-            return await ctx.send(mensagemerro)
-        async with ctx.typing():
-            try:
-                for guild in self.client.guilds:
-                    self.client.tree.clear_commands(guild=guild)
-                    await self.client.tree.sync(guild=guild)
-                await self.client.tree.sync()
-                await ctx.send("✅ Comandos re-sincronizados globalmente. Pode levar até 1h para propagação completa.")
-            except Exception as e:
-                await ctx.send(f"❌ Erro: {e}")
-
     # GRUPO DE COMANDOS 'dono'
     dono = app_commands.Group(name="owner", description="Comandos de dono do bot.")
 
@@ -116,13 +101,8 @@ class onwer(commands.Cog):
             return await interaction.response.send_message(mensagemerro, ephemeral=True)
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            # Limpa comandos antigos de cada servidor
-            for guild in self.client.guilds:
-                self.client.tree.clear_commands(guild=guild)
-                await self.client.tree.sync(guild=guild)
-            # Sincroniza globalmente
-            await self.client.tree.sync()
-            await interaction.followup.send(f"✅ Comandos re-sincronizados globalmente. Pode levar até 1h para aparecer em todos os servidores. Se quiser testar imediatamente, use em um servidor específico com /owner sync-guild <id>")
+            await self.client.full_sync()
+            await interaction.followup.send("✅ Comandos re-sincronizados globalmente. Pode levar até 1h para propagar.")
         except Exception as e:
             await interaction.followup.send(f"❌ Erro ao sincronizar: {e}")
 

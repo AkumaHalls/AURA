@@ -1,6 +1,7 @@
 # AS IMPORTAÇÕES NECESSÁRIAS
 import discord
 import os
+import asyncio
 from os import listdir
 from discord.ext import commands
 from discord.errors import LoginFailure
@@ -33,6 +34,8 @@ if not token_bot:
     print("Erro: O token do bot não foi encontrado. Certifique-se de que a variável DISCORD_TOKEN foi configurada corretamente.")
     exit()
 
+SIGNAL_FILE = 'sync_signal.txt'
+
 # Classe básica de inicialização do bot
 class Client(commands.Bot):
     def __init__(self) -> None:
@@ -51,20 +54,49 @@ class Client(commands.Bot):
         # Carrega as extensões (cogs) registradas
         for ext in self.cogslist:
             await self.load_extension(ext)
+        # Inicia background task que escuta sinal de sync vindo do web panel
+        self.loop.create_task(self._sync_signal_listener())
+
+    async def _sync_signal_listener(self):
+        await self.wait_until_ready()
+        while not self.is_closed():
+            if os.path.exists(SIGNAL_FILE):
+                try:
+                    os.remove(SIGNAL_FILE)
+                    print("Sinal de sync detectado! Limpando cache de guilds...")
+                    for guild in self.guilds:
+                        try:
+                            self.tree.clear_commands(guild=guild)
+                            await self.tree.sync(guild=guild)
+                        except:
+                            pass
+                    await self.tree.sync()
+                    print("Sync completo via sinal do web panel.")
+                except Exception as e:
+                    print(f"Erro no sync via sinal: {e}")
+            await asyncio.sleep(5)
+
+    async def full_sync(self):
+        """Limpa comandos de guild e sincroniza globalmente."""
+        print("Limpando cache de guilds...")
+        for guild in self.guilds:
+            try:
+                self.tree.clear_commands(guild=guild)
+                await self.tree.sync(guild=guild)
+            except:
+                pass
+        await self.tree.sync()
+        print("Sync global concluído.")
 
     async def on_ready(self):
         # Executa ações quando o bot estiver pronto
         await self.wait_until_ready()
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Bem vindo"))  # Define o status do bot
         if not self.synced:
-            # Remove comandos antigos por guild para evitar conflitos de cache
-            for guild in self.guilds:
-                try:
-                    self.tree.clear_commands(guild=guild)
-                    await self.tree.sync(guild=guild)
-                except:
-                    pass
-            # Sincroniza globalmente (ate 1h para propagar, mas resolve cache quebrado)
+            # Lista comandos registrados para debug
+            cmds = [c.name for c in self.tree.get_commands()]
+            print(f"Comandos registrados no tree: {cmds}")
+            # Sincroniza globalmente (ate 1h propagar)
             await self.tree.sync()
             print("Comandos sincronizados globalmente.")
             self.synced = True
