@@ -1,10 +1,30 @@
 services:
+  mongodb:
+    image: mongo:7-jammy
+    container_name: aura-mongo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-wytrom}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-protecao9650senha}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   bot:
     build: .
     container_name: aura-bot
     restart: unless-stopped
     ports:
       - "2501:2501"
+    depends_on:
+      mongodb:
+        condition: service_healthy
     environment:
       # Discord
       - DISCORD_TOKEN=${DISCORD_TOKEN}
@@ -18,7 +38,8 @@ services:
       - CLAN_TAG=${CLAN_TAG}
 
       # MongoDB / Web Panel
-      - MONGO_URI=${MONGO_URI}
+      - MONGO_URI=${MONGO_URI:-mongodb://wytrom:protecao9650senha@mongodb:27017/?authSource=admin}
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-aura_bot}
       - WEB_PANEL_PASSWORD=${WEB_PANEL_PASSWORD}
 
       # Atendimento (IDs Discord)
@@ -47,3 +68,6 @@ services:
       - KICK_MESSAGE=${KICK_MESSAGE}
 
       - TZ=America/Sao_Paulo
+
+volumes:
+  mongo_data:
