@@ -46,11 +46,14 @@ def not_found(e):
 @login_required
 def dashboard():
     try:
-        from mongo_db import stats_dashboard, listar_provas
+        from mongo_db import stats_dashboard, listar_provas, get_db
+        if get_db() is None:
+            flash('MongoDB não conectado. Verifique MONGO_URI no .env.', 'warning')
         stats = stats_dashboard()
         provas = listar_provas(10)
         return render_template('dashboard.html', active='dashboard', stats=stats, provas_recentes=provas)
     except Exception as e:
+        flash(f'Erro ao carregar dashboard: {e}', 'danger')
         return render_template('dashboard.html', active='dashboard',
                                stats={"total_provas": 0, "aprovados": 0, "reprovados": 0, "total_tickets": 0},
                                provas_recentes=[]), 200
@@ -69,9 +72,12 @@ def provas():
             flash('Dados insuficientes para deletar.', 'danger')
         return redirect(url_for('provas'))
     try:
-        from mongo_db import listar_provas
+        from mongo_db import listar_provas, get_db
+        if get_db() is None:
+            flash('MongoDB não conectado. Verifique MONGO_URI no .env.', 'warning')
         todas = listar_provas(200)
-    except Exception:
+    except Exception as e:
+        flash(f'Erro ao carregar provas: {e}', 'danger')
         todas = []
     return render_template('provas.html', active='provas', provas=todas)
 
@@ -89,9 +95,12 @@ def tickets():
             flash('Dados insuficientes para deletar.', 'danger')
         return redirect(url_for('tickets'))
     try:
-        from mongo_db import listar_tickets
+        from mongo_db import listar_tickets, get_db
+        if get_db() is None:
+            flash('MongoDB não conectado. Verifique MONGO_URI no .env.', 'warning')
         todos = listar_tickets(200)
-    except Exception:
+    except Exception as e:
+        flash(f'Erro ao carregar tickets: {e}', 'danger')
         todos = []
     return render_template('tickets.html', active='tickets', tickets=todos)
 

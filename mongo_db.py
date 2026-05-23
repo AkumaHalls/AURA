@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 MONGO_URI = os.getenv("MONGO_URI")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "aura_bot")
 client = None
 db = None
 
@@ -26,9 +27,10 @@ def conectar():
         return False
     try:
         print(f"Tentando conectar ao MongoDB: {_mongo_uri_placeholder(MONGO_URI)}")
+        print(f"   Database: {MONGO_DB_NAME}")
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=10000)
         client.admin.command('ping')
-        db = client.get_database("aura_bot")
+        db = client.get_database(MONGO_DB_NAME)
         print("✅ Conectado ao MongoDB com sucesso.")
         return True
     except Exception as e:
