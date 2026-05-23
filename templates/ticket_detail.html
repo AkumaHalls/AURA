@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Ticket - {{ ticket.user_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-ticket"></i> Ticket de {{ ticket.user_name }}</h4>
+    <a href="/tickets" class="btn btn-sm" style="background:#2d3139;color:#e1e3e6;border:none;border-radius:8px;padding:.5rem 1rem;"><i class="bi bi-arrow-left"></i> Voltar</a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#1a3a2a;"><i class="bi bi-person" style="color:#4ade80;"></i></div>
+            <div><small style="color:#6b7280;">Usuário</small><h6 class="mb-0">{{ ticket.user_name }}</h6></div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#1a1a3a;"><i class="bi bi-tag" style="color:#60a5fa;"></i></div>
+            <div><small style="color:#6b7280;">Tipo</small><h6 class="mb-0">{{ ticket.tipo }}</h6></div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#1a3a2a;"><i class="bi bi-check-circle" style="color:#4ade80;"></i></div>
+            <div><small style="color:#6b7280;">Status</small>
+                <h6 class="mb-0">
+                    {% if ticket.status == 'aberto' %}<span class="badge" style="background:#1a3a2a;color:#4ade80;">Aberto</span>
+                    {% elif ticket.status == 'atendendo' %}<span class="badge" style="background:#1a2a3a;color:#60a5fa;">Em Atendimento</span>
+                    {% else %}<span class="badge" style="background:#2a1a1a;color:#f87171;">Fechado</span>
+                    {% endif %}
+                </h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#3a1a1a;"><i class="bi bi-clock" style="color:#f87171;"></i></div>
+            <div><small style="color:#6b7280;">Data</small><h6 class="mb-0">{{ ticket.data[:19]|replace('T', ' ') }}</h6></div>
+        </div>
+    </div>
+</div>
+
+{% if ticket.transcript %}
+<div class="card-table">
+    <div class="card-header"><h6 class="mb-0"><i class="bi bi-chat-dots"></i> Transcrição</h6></div>
+    <div class="p-0">
+        <div style="padding:1rem 1.25rem;max-height:600px;overflow-y:auto;font-family:'Courier New',monospace;font-size:.8rem;line-height:1.6;color:#d1d5db;background:#0d1117;border-radius:0 0 12px 12px;">
+            {% for line in ticket.transcript.split('\n') %}
+                {% if line.startswith('#') %}
+                    <div style="color:#fbbf24;font-weight:bold;margin:1rem 0 .5rem;">{{ line }}</div>
+                {% elif line.startswith('*') %}
+                    <div style="color:#6b7280;font-style:italic;">{{ line }}</div>
+                {% else %}
+                    <div>{{ line }}</div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card-table">
+    <div class="card-header"><h6 class="mb-0"><i class="bi bi-chat-dots"></i> Transcrição</h6></div>
+    <div class="empty-state"><i class="bi bi-chat-square-text"></i><p>Este ticket ainda não possui transcrição salva.</p></div>
+</div>
+{% endif %}
+{% endblock %}

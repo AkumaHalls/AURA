@@ -138,28 +138,32 @@ class DropdownSuporte(discord.ui.View):
 
 # VIEW DE ENCERRAMENTO COM BOTÕES
 class CloseTicketView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None) 
+    def __init__(self, canal=None):
+        super().__init__(timeout=120)
+        self.canal = canal
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if self.canal is None:
+            await interaction.response.send_message("Sessão expirada. Feche o ticket novamente pelo painel.", ephemeral=True)
+            return False
+        return True
 
     @discord.ui.button(label="Fechar Ticket", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="fechar_ticket_confirm")
     async def fechar_ticket_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        canal = interaction.channel
-        if not canal or not canal.name:
-            await interaction.response.send_message("Erro: não foi possível identificar o canal do ticket.", ephemeral=True)
-            return
-
+        canal = self.canal
         await interaction.response.send_message("Okay! Salvando o histórico e fechando este ticket em 5 segundos...")
 
         user_id = canal.name.split('-')[-1]
         nome_canal = canal.name
 
-        # --- LÓGICA DE SALVAMENTO ---
+        # --- SALVA TRANSCRIPT EM ARQUIVO ---
         log_channel = None
-        if interaction.guild.id == id_servidor_bh: 
+        if interaction.guild and interaction.guild.id == id_servidor_bh: 
             log_channel = interaction.guild.get_channel(id_canal_logs_bh)
-        elif interaction.guild.id == id_servidor_tribunal: 
+        elif interaction.guild and interaction.guild.id == id_servidor_tribunal: 
             log_channel = interaction.guild.get_channel(id_canal_logs_tri)
 
+        transcript_lines = []
         if log_channel:
             log_filename = f"{canal.id}.md"
             try:
@@ -167,8 +171,11 @@ class CloseTicketView(discord.ui.View):
                     f.write(f"# Histórico de {nome_canal}:\n\n")
                     async for message in canal.history(limit=None, oldest_first=True):
                         created = datetime.strftime(message.created_at, "%d/%m/%Y às %H:%M:%S")
-                        f.write(f"[{created}] {message.author}: {message.clean_content}\n")
-                    f.write(f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*")
+                        line = f"[{created}] {message.author}: {message.clean_content}"
+                        f.write(line + "\n")
+                        transcript_lines.append(line)
+                    rodape = f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*"
+                    f.write(rodape)
                 
                 with open(log_filename, 'rb') as f:
                     await log_channel.send(f"Transcrição do ticket `{nome_canal}`:", file=discord.File(f, f"{nome_canal}.md"))
@@ -177,13 +184,24 @@ class CloseTicketView(discord.ui.View):
             except Exception as e:
                 print(f"ERRO ao salvar o log do ticket {nome_canal}: {e}")
         else:
-            print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
+            print(f"AVISO: O salvamento de log foi ignorado.")
         
+        # --- SALVA NO MONGODB (status + transcript) ---
         try:
-            from mongo_db import atualizar_ticket
-            atualizar_ticket(user_id, "fechado")
-        except Exception:
-            pass
+            from mongo_db import get_db
+            db = get_db()
+            if db is not None:
+                db.tickets.update_one(
+                    {"user_id": str(user_id), "status": "aberto"},
+                    {"$set": {
+                        "status": "fechado",
+                        "transcript": "\n".join(transcript_lines),
+                        "atendente": interaction.user.name
+                    }}
+                )
+                print(f"MongoDB: Ticket de user {user_id} fechado com transcript salvo.")
+        except Exception as e:
+            print(f"Erro ao fechar ticket no MongoDB: {e}")
 
         await asyncio.sleep(5)
         try:
@@ -234,7 +252,7 @@ class TicketAdminView(discord.ui.View):
         if atendente_role not in interaction.user.roles and not interaction.user.guild_permissions.manage_guild:
             return await interaction.response.send_message("Você não tem permissão para fechar este ticket.", ephemeral=True)
         
-        await interaction.response.send_message("Você tem certeza que deseja fechar o ticket? Esta ação é irreversível.", view=CloseTicketView(), ephemeral=True)
+        await interaction.response.send_message("Você tem certeza que deseja fechar o ticket? Esta ação é irreversível.", view=CloseTicketView(canal=interaction.channel), ephemeral=True)
 
 
 # [MODIFICADO] BOTÂO CRIAR TICKET

@@ -104,6 +104,24 @@ def tickets():
         todos = []
     return render_template('tickets.html', active='tickets', tickets=todos)
 
+@app.route('/ticket/<user_id>/<path:data>')
+@login_required
+def ticket_detail(user_id, data):
+    try:
+        from mongo_db import get_db
+        db = get_db()
+        if db is None:
+            flash('MongoDB não conectado.', 'warning')
+            return redirect(url_for('tickets'))
+        ticket = db.tickets.find_one({"user_id": user_id, "data": data}, {"_id": 0})
+        if not ticket:
+            flash('Ticket não encontrado.', 'warning')
+            return redirect(url_for('tickets'))
+        return render_template('ticket_detail.html', active='tickets', ticket=ticket)
+    except Exception as e:
+        flash(f'Erro ao carregar ticket: {e}', 'danger')
+        return redirect(url_for('tickets'))
+
 @app.route('/clan')
 @login_required
 def clan():
