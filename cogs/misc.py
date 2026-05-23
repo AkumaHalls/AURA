@@ -30,7 +30,7 @@ async def buscaruser(interaction,membro,menu):
         roles_list = roles_list[:5]  # Limita a lista aos primeiros 5 cargos
         roles_list.append("...")  # Adiciona "..." para indicar que há mais cargos
         resposta.add_field(name=f"💼⠂Cargos ({len(membro.roles) - 1})", value='\n • '.join(roles_list), inline=False)
-     else:resposta.add_field(name=f"💼⠂Cargos ({len(membro.roles) - 1})", value='\n • '.join([role.mention for role in membro.roles if role.name != '@everSyone']), inline=False)
+     else:resposta.add_field(name=f"💼⠂Cargos ({len(membro.roles) - 1})", value='\n • '.join([role.mention for role in membro.roles if role.name != '@everyone']), inline=False)
   if menu is True: #isso verifica se o comando veio do menu se sim ele manda como ephemeral
      await interaction.response.send_message(embed=resposta,ephemeral=True)
   else: await interaction.response.send_message(embed=resposta)
@@ -91,13 +91,12 @@ class misc(commands.Cog):
   #esse on_messagem é responsavel pelo sistema de avisos /bump e do afk dos usuarios
   async def on_message(self,message):
     #verifica todos os usuarios da lista de afk
-    for i in range(len(afklist)):
+    for i in range(0, len(afklist), 2):
       if (f"<@{afklist[i]}>" in message.content) and (not message.author.bot):
         msgenviada = await message.channel.send(f"<:BraixSleep:988776304587440148>┃ eiii {message.author.mention} quem você marcou **está afk** no momento pelo motivo: `{afklist[i+1]}`")
         await asyncio.sleep(15.0)
         await msgenviada.delete()
         return None
-      break
     
     # essa parte aqui verifica se o bot disboard manda a confirmação de bump dele e essa parte pega e ativa o lembrete
     if message.author.bot and message.embeds:
@@ -135,6 +134,7 @@ class misc(commands.Cog):
         self.client.tree.remove_command(self.menu_useravatar, type=self.menu_useravatar.type)
         self.client.tree.remove_command(self.menu_userinfo, type=self.menu_userinfo.type)
         self.client.tree.remove_command(self.menu_userbanner, type=self.menu_userbanner.type)
+        self.client.tree.remove_command(self.menu_userabraco, type=self.menu_userabraco.type)
 
 
 #GRUPO USUARIOS 
@@ -148,7 +148,7 @@ class misc(commands.Cog):
 #COMANDO USUARIO AVATAR SLASH
   @usuario.command(name="avatar",description='👤⠂Exibe o avatar de um membro')
   @app_commands.describe(membro="informe um membro")
-  async def useravatar(self,interaction: discord.Integration,membro: discord.Member=None):
+  async def useravatar(self,interaction: discord.Interaction,membro: discord.Member=None):
     menu = False
     await buscaravatar(interaction,membro,menu)# chama a função lá em cima
 
@@ -160,7 +160,7 @@ class misc(commands.Cog):
 #COMANDO USUARIO INFO SLASH
   @usuario.command(name="info",description='👤⠂Verifica as informações de um membro')
   @app_commands.describe(membro="informe um membro")
-  async def userinfo(self,interaction: discord.Integration,membro: discord.Member=None):
+  async def userinfo(self,interaction: discord.Interaction,membro: discord.Member=None):
     menu = False
     await buscaruser(interaction,membro,menu)# chama a função lá em cima
  
@@ -171,7 +171,7 @@ class misc(commands.Cog):
 #COMANDO USUARIO ABRAÇO SLASH
   @usuario.command(name="abraçar",description='👤⠂Abraçe um membro')
   @app_commands.describe(membro="informe um membro")
-  async def userabraco(self,interaction: discord.Integration,membro: discord.Member):
+  async def userabraco(self,interaction: discord.Interaction,membro: discord.Member):
     await funcaoabracarusuario(interaction,membro) # chama a função lá em cima
 
 #COMANDO USUARIO BANNER MENU
@@ -213,10 +213,10 @@ class misc(commands.Cog):
       await interaction.response.send_message(embed=resposta,view=view)
     else:await interaction.response.send_message(f"<:BraixBlank:969396003436380200> - Parece que o {membro.mention} não possui um banner kyu~~.", ephemeral=True)
 
-#COMANDO USUARIO ABRAÇO SLASH
+#COMANDO USUARIO ATACAR
   @usuario.command(name="atacar",description='👤⠂Ataque um membro')
   @app_commands.describe(membro="informe um alvo")
-  async def userabraco(self,interaction: discord.Integration,membro: discord.Member):
+  async def useratacar(self,interaction: discord.Interaction,membro: discord.Member):
     print (f"Usuario: {interaction.user.name} usou atacar")
     resposta = discord.Embed(
       description=f"🔥┃{interaction.user.mention} tacou fogo em {membro.mention}!",
@@ -225,10 +225,10 @@ class misc(commands.Cog):
     resposta.set_image(url=f"https://64.media.tumblr.com/dcfc44e780bdf2427abdc852f960e981/tumblr_oktry4hti91tgjlm2o1_500.gif")
     await interaction.response.send_message(embed=resposta)
   
-#COMANDO USUARIO ABRAÇO SLASH
+#COMANDO USUARIO CARINHO
   @usuario.command(name="carinho",description='👤⠂Faça carinho em um membro')
   @app_commands.describe(membro="informe um membro")
-  async def userabraco(self,interaction: discord.Integration,membro: discord.Member):
+  async def usercarinho(self,interaction: discord.Interaction,membro: discord.Member):
     print (f"Usuario: {interaction.user.name} usou carinho")
     resposta = discord.Embed(
       description=f"🦊┃{interaction.user.mention} fez carinho em {membro.mention}!",
@@ -237,10 +237,10 @@ class misc(commands.Cog):
     resposta.set_image(url=f"https://i.makeagif.com/media/6-13-2015/5aAShu.gif")
     await interaction.response.send_message(embed=resposta)
 
-#COMANDO USUARIO CAFUNÉ SLASH
+#COMANDO USUARIO CAFUNÉ
   @usuario.command(name="cafuné",description='👤⠂Faça cafuné em um membro')
   @app_commands.describe(membro="informe um membro")
-  async def userabraco(self,interaction: discord.Integration,membro: discord.Member):
+  async def usercafune(self,interaction: discord.Interaction,membro: discord.Member):
     print (f"Usuario: {interaction.user.name} usou cafuné")
     resposta = discord.Embed(
       description=f"🦊┃{interaction.user.mention} fez cafuné em {membro.mention}!",
@@ -252,8 +252,8 @@ class misc(commands.Cog):
 
 #COMANDO USUARIO AFK
   @usuario.command(name="afk",description='👤⠂fique afk')
-  @app_commands.describe(motivo="informe um membro")
-  async def userafk(self,interaction: discord.Integration,motivo: str=None):
+  @app_commands.describe(motivo="informe um motivo")
+  async def userafk(self,interaction: discord.Interaction, motivo: str=None):
     print (f"Usuario: {interaction.user.name} usou afk")
     if motivo == None:
       motivo = "ele não falou"

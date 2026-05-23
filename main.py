@@ -5,21 +5,13 @@ from os import listdir
 from discord.ext import commands
 from discord.errors import LoginFailure
 from dotenv import load_dotenv
-from flask import Flask
 
-# Cria um pequeno servidor Flask
-app = Flask(__name__)
+load_dotenv()
 
-@app.route("/")
-def home():
-    return "Brix está online!"
-
-# Inicia o servidor Flask em uma thread separada
-def run_server():
-    app.run(host="0.0.0.0", port=3000)
-
+# Inicia o painel web em uma thread separada
 import threading
-threading.Thread(target=run_server).start()
+from web_panel import run_web_panel
+threading.Thread(target=run_web_panel, daemon=True).start()
 
 # Verifica se o arquivo .env existe (opcional para desenvolvimento local)
 if not os.path.exists('.env'):

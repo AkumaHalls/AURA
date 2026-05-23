@@ -33,7 +33,7 @@ class admin(commands.Cog):
     print (f"Usuario: {interaction.user.name} usou banir em: {membro}")
     await interaction.response.defer()
     try:
-      if interaction.permissions.ban_members:
+      if interaction.user.guild_permissions.ban_members:
         resposta = discord.Embed(
             colour=discord.Color.red(),
             title="🦊┃Banido",
@@ -53,9 +53,9 @@ class admin(commands.Cog):
   async def unban(self,interaction: discord.Interaction, membro:str):
     print (f"Usuario: {interaction.user.name} usou desbanir em: {membro}")
     try:
-      if interaction.permissions.ban_members:
-        membro = int(membro)
-        user = await self.client.fetch_user(membro)
+      if interaction.user.guild_permissions.ban_members:
+        membro_id = int(membro)
+        user = await self.client.fetch_user(membro_id)
         await interaction.guild.unban(user)
         resposta = discord.Embed(
             colour=discord.Color.yellow(),
@@ -63,8 +63,7 @@ class admin(commands.Cog):
             description=f"Membro: {membro}"
         )
         await interaction.response.send_message(embed=resposta)
-        return
-      else: await interaction.followup.send(mensagemerro,ephemeral=True)
+      else: await interaction.response.send_message(mensagemerro,ephemeral=True)
     except Exception:
       await interaction.response.send_message(errobanir, ephemeral=True)
   
@@ -77,7 +76,7 @@ class admin(commands.Cog):
     print(f"Usuario: {interaction.user.name} usou kick em: {membro}")
     await interaction.response.defer()
     try:
-        if interaction.permissions.kick_members:
+        if interaction.user.guild_permissions.kick_members:
             resposta = discord.Embed(
                 colour=discord.Color.orange(),
                 title="🦊┃Expulso",
@@ -99,7 +98,7 @@ class admin(commands.Cog):
   @chat.command(name="deletar",description='🗨️⠂Deleta um chat existente')
   async def deletechat(self,interaction: discord.Interaction):
     print (f"Usuario: {interaction.user.name} usou deletar canal em: {interaction.channel.name}")
-    if interaction.permissions.manage_channels:
+    if interaction.user.guild_permissions.manage_channels:
         await interaction.response.send_message("✅┃bye bye chat...")
         await asyncio.sleep(2.0)
         await interaction.channel.delete()
@@ -111,7 +110,7 @@ class admin(commands.Cog):
   @app_commands.describe(quantidade="informe a quantidade de mensagens para deletar")
   async def prunechat(self,interaction: discord.Interaction, quantidade:int):
     print (f"Usuario: {interaction.user.name} usou limpar chat em: {interaction.channel.name}")
-    if interaction.permissions.manage_channels:
+    if interaction.user.guild_permissions.manage_channels:
         await interaction.response.send_message("<:stick:969703475720126464> - Limpando o chat...",ephemeral=True)
         await interaction.channel.purge(limit=quantidade)
     else: await interaction.response.send_message(mensagemerro,ephemeral=True)
@@ -121,8 +120,8 @@ class admin(commands.Cog):
   @chat.command(name="criar",description='🗨️⠂Crie um novo chat')
   @app_commands.describe(nome="informe um nome para o chat")
   async def createchat(self,interaction: discord.Interaction, nome:str,categoria:discord.CategoryChannel=None):
-    print (f"Usuario: {interaction.user.name} usou limpar chat em: {interaction.channel.name}")
-    if interaction.permissions.manage_channels:
+    print (f"Usuario: {interaction.user.name} usou criar chat: {interaction.channel.name}")
+    if interaction.user.guild_permissions.manage_channels:
         if categoria is None:
           novo_canal = await interaction.guild.create_text_channel(nome)
         else: novo_canal = await interaction.guild.create_text_channel(nome,category=categoria)
@@ -167,7 +166,7 @@ class admin(commands.Cog):
   @canal.command(name="deletar",description='🗨️⠂Deleta um canal existente')
   async def deletechannel(self,interaction: discord.Interaction,canal: discord.VoiceChannel):
     print (f"Usuario: {interaction.user.name} usou deletar canal em: {interaction.channel.name}")
-    if interaction.permissions.manage_channels:
+    if interaction.user.guild_permissions.manage_channels:
         await interaction.response.send_message("✅┃bye bye canal...")
         await canal.delete()
     else: await interaction.response.send_message(mensagemerro,ephemeral=True)
@@ -176,12 +175,12 @@ class admin(commands.Cog):
   @canal.command(name="criar",description='🗨️⠂Crie um novo canal')
   @app_commands.describe(nome="informe um nome para o chat")
   async def createchannel(self,interaction: discord.Interaction, nome:str,categoria:discord.CategoryChannel=None):
-    print (f"Usuario: {interaction.user.name} usou limpar chat em: {interaction.channel.name}")
-    if interaction.permissions.manage_channels:
+    print (f"Usuario: {interaction.user.name} usou criar canal: {interaction.channel.name}")
+    if interaction.user.guild_permissions.manage_channels:
         if categoria is None:
           novo_canal = await interaction.guild.create_voice_channel(nome)
         else: novo_canal = await interaction.guild.create_voice_channel(nome,category=categoria)
-        await interaction.response.send_message(f"<:stick:969703475720126464> - Criei o canal de texto {novo_canal.mention} para você.",ephemeral=True)
+        await interaction.response.send_message(f"<:stick:969703475720126464> - Criei o canal de voz {novo_canal.mention} para você.",ephemeral=True)
     else: await interaction.response.send_message(mensagemerro,ephemeral=True)
 
 #COMANDO INFO CANAL
@@ -223,7 +222,7 @@ class admin(commands.Cog):
       await interaction.response.send_message(erropermissão, ephemeral=True)
       return
     try:
-      if interaction.permissions.manage_roles:
+      if interaction.user.guild_permissions.manage_roles:
         resposta = discord.Embed(
           colour=discord.Color.yellow(),
           title="🦊┃Cargo Adicionado",
@@ -245,7 +244,7 @@ class admin(commands.Cog):
       await interaction.response.send_message(erropermissão, ephemeral=True)
       return
     try:
-      if interaction.permissions.manage_roles:
+      if interaction.user.guild_permissions.manage_roles:
         resposta = discord.Embed(
           colour=discord.Color.yellow(),
           title="🦊┃Cargo Removido",
@@ -264,7 +263,7 @@ class admin(commands.Cog):
   async def rolecharge(self,interaction: discord.Interaction, membro: discord.Member, retirar: discord.Role, colocar: discord.Role):
     print (f"Usuario: {interaction.user.name} usou trocar cargo")
     try:
-      if interaction.permissions.manage_roles:
+      if interaction.user.guild_permissions.manage_roles:
         resposta = discord.Embed(
           colour=discord.Color.yellow(),
           title="🦊┃Cargo Trocado",

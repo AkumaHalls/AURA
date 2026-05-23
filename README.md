@@ -1,134 +1,97 @@
-# 🤖 Aura
+# Aura
 
 ![bot image](img/AURA.png)
 
-Código em Python do Bot de interação e atendimento do **B.A.D** com suporte a Cogs.
-
-Todos os comandos estão com comentários e explicados para fácil modificação. Os arquivos de dependências e de configuração para a Render estão adicionados ao repositório. Divirta-se! ✨
+Bot de interação, atendimento e administração do **B.A.D**. Desenvolvido em Python com discord.py, painel web Flask e MongoDB.
 
 ---
 
-### **🚀 Especificações do Código**
+### Funcionalidades
 
-* Dropdowns (Paineis);
-* Suporte para paineis persistentes (não somem se o bot reiniciar);
-* Salva o histórico do chat ao fechar um ticket;
-* Suporte a **context\_menu** (comandos de clique direito) para algumas funções;
-* Suporte a `.env` para gerenciar as variáveis de ambiente;
-* **Código em cogs**, facilitando a adição de novas funções e updates;
-* Vários comandos de interação para os usuários;
-* Comando de avaliação de atendimento;
-* Sistema de Autorole com exceção para cargos específicos.
+- Sistema de **provas** para Co-Líder com aprovação do dono via DM
+- **Painel web** de administração (Dashboard, Provas, Tickets, Status do Clã)
+- **MongoDB** para persistência de dados (provas, tickets)
+- Dropdowns persistentes (painéis de atendimento)
+- Transcrição e salvamento de histórico de tickets em `.md`
+- Context menus (clique direito) para usuários
+- Sistema de Autorole com exceção para banidos
+- Sincronização com Clash of Clans API (cargos, verificação de membros)
+- Status de clã em canais de voz (atualização automática)
 
 ---
 
-### **📋 Lista dos Comandos**
-
-<details>
-<summary><strong>Clique para expandir a lista de comandos</strong></summary>
+### Comandos
 
 **Context Menu (Clique Direito)**
-* 👤 Usuario Avatar
-* ℹ️ Usuario Info
-* 🖼️ Usuario Banner
-* 🫂 Usuario Abraço
+- Usuario Avatar
+- Usuario Info
+- Usuario Banner
+- Usuario Abraço
 
 **Comandos de Barra (`/`)**
 
-* `/owner say`
-* `/owner listar`
-* `/owner sair`
-* `/owner bot-name`
-* `/owner bot-avatar`
-    ***
-* `/bot ping`
-* `/bot info`
-* `/bot help`
-    ***
-* `/usuario avatar`
-* `/usuario info`
-* `/usuario abraçar`
-* `/usuario banner`
-* `/usuario atacar`
-* `/usuario carinho`
-* `/usuario cafuné`
-* `/usuario afk`
-    ***
-* `/servidor icone`
-* `/servidor banner`
-* `/servidor splash`
-* `/servidor info`
-    ***
-* `/admin banir`
-* `/admin desbanir`
-* `/admin kick`
-    ***
-* `/chat deletar`
-* `/chat limpar`
-* `/chat criar`
-* `/chat info`
-    ***
-* `/canal deletar`
-* `/canal limpar`
-* `/canal criar`
-* `/canal info`
-    ***
-* `/cargo adicionar`
-* `/cargo remover`
-* `/cargo trocar`
-* `/cargo info`
-    ***
-* `/painel suporte-bh`
-* `/painel servicos-bh`
-* `/painel tribunal`
-    ***
-* `/atendimento fechar`
-* `/atendimento encerrar`
-* `/atendimento adicionar`
-* `/atendimento remover`
-* `/atendimento avaliar`
-* `/atendimento entrevista`
-
-</details>
+| Grupo | Comandos |
+|-------|----------|
+| **Owner** | `/owner say`, `/owner listar`, `/owner sair`, `/owner bot-name`, `/owner bot-avatar` |
+| **Bot** | `/bot ping`, `/bot info`, `/bot help` |
+| **Usuário** | `/usuario avatar`, `/usuario info`, `/usuario abraçar`, `/usuario banner`, `/usuario atacar`, `/usuario carinho`, `/usuario cafuné`, `/usuario afk` |
+| **Servidor** | `/servidor icone`, `/servidor banner`, `/servidor splash`, `/servidor info` |
+| **Admin** | `/admin banir`, `/admin desbanir`, `/admin kick` |
+| **Chat** | `/chat deletar`, `/chat limpar`, `/chat criar`, `/chat info` |
+| **Canal** | `/canal deletar`, `/canal criar`, `/canal info` |
+| **Cargo** | `/cargo adicionar`, `/cargo remover`, `/cargo trocar`, `/cargo info` |
+| **Painel** | `/painel suporte` |
+| **Atendimento** | `/atendimento encerrar`, `/atendimento adicionar`, `/atendimento remover`, `/atendimento importar-transcricoes` |
+| **Prova** | `/iniciar-prova` |
+| **Clã** | `/clash setup`, `/clash registrar`, `/clash aprovar`, `/clash negar` |
+| **Status** | `/setup-status`, `/force-update` |
 
 ---
 
-### **🛠️ Instruções de Instalação**
+### Painel Web
 
-#### **Hospedagem na Render (Recomendado)**
+O bot sobe um painel administrativo em `http://ip:2501`.
 
-1.  Faça um "Fork" deste repositório para a sua conta do GitHub.
-2.  Crie uma nova aplicação "Web Service" na [Render](https://render.com/).
-3.  Conecte o repositório que você acabou de criar.
-4.  Nas configurações, defina o **Start Command** como: `python main.py`
-5.  Vá para a aba "Environment" e adicione todas as **Variáveis Exigidas** listadas abaixo.
-6.  Clique em "Create Web Service" e aguarde o deploy.
-
-#### **Rodando Localmente (Para testes)**
-
-1.  Clone o repositório para a sua máquina.
-2.  Renomeie o arquivo `exemplo.env` para `.env` e preencha as variáveis.
-3.  Recomendo o uso do VSCode. Abra um terminal e instale as dependências com o comando:
-    ```
-    pip install -r requirements.txt
-    ```
-4.  Inicie o bot com:
-    ```
-    python main.py
-    ```
+| Rota | Descrição |
+|------|-----------|
+| `/` | Dashboard com stats e gráfico de aprovação |
+| `/provas` | Histórico completo de provas |
+| `/tickets` | Tickets de atendimento |
+| `/clan` | Status do clã no Clash of Clans |
 
 ---
 
-### **🔑 Variáveis Exigidas (Environment Variables)**
+### Instalação (Render.com)
 
-Estas são as variáveis que você **precisa** configurar no painel da Render para que o bot funcione corretamente.
+1. Faça fork do repositório para o GitHub
+2. Crie um **Web Service** no Render conectado ao repositório
+3. **Start Command:** `python main.py`
+4. Adicione as variáveis de ambiente no painel do Render
+5. Faça deploy
 
-* `DISCORD_TOKEN` - O token de autenticação do seu bot.
-* `DONO_ID` ou `OWNER_ID` - A sua ID de usuário do Discord.
-* `CANAL_REGISTRO_ID` - ID do canal onde os membros se registram com a palavra "Liberar".
-* `CARGO_MEMBRO_ID` - ID do cargo que será dado aos novos membros.
-* `CARGO_BANIDO_ID` - ID do cargo de banido, que servirá como exceção para o autorole.
-* `id_cargo_atendente` - ID do cargo que pode atender aos tickets de suporte.
-* `id_canal_suporte` - ID do canal onde os tickets (tópicos/threads) serão criados.
-* `id_servidor_tribunal` - ID do seu servidor do Discord.
-* `id_canal_logs_tri` - ID do canal para onde os logs dos tickets serão enviados.
+---
+
+### Variáveis de Ambiente (.env)
+
+| Variável | Descrição |
+|----------|-----------|
+| `DISCORD_TOKEN` | Token do bot Discord |
+| `DONO_ID` / `OWNER_ID` | ID do dono do bot |
+| `COC_EMAIL` / `COC_PASSWORD` | Credenciais da API Clash of Clans |
+| `CLAN_TAG` | Tag do clã (ex: #ABC123) |
+| `CANAL_REGISTRO_ID` | Canal de registro do autorole |
+| `CARGO_MEMBRO_ID` | Cargo de membro (autorole) |
+| `CARGO_BANIDO_ID` | Cargo de banido (exceção autorole) |
+| `id_cargo_atendente` | Cargo de atendente de tickets |
+| `id_canal_suporte` | Canal onde os tickets são criados |
+| `id_categoria_staff` | Categoria para tickets |
+| `id_servidor_bh` / `id_servidor_tribunal` | IDs dos servidores |
+| `id_canal_logs_bh` / `id_canal_logs_tri` | Canais de log dos tickets |
+| `id_canal_avaliacao` | Canal de avaliações |
+| `REGISTRATION_CHANNEL_ID` | Canal de registro do Clash |
+| `LOG_CHANNEL_ID` | Canal de logs do Clash |
+| `APPROVAL_LOG_CHANNEL_ID` | Canal de aprovações do Clash |
+| `COC_MEMBER_ROLE_ID` / `COC_ELDER_ROLE_ID` / `COC_COLEADER_ROLE_ID` | Cargos sincronizados CoC |
+| `KICK_MESSAGE` | Mensagem enviada ao expulsar |
+| `WEB_PANEL_PASSWORD` | Senha do painel web |
+| `MONGO_URI` | URI de conexão MongoDB |

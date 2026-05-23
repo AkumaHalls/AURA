@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Provas{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-journal-text"></i> Histórico de Provas</h4>
+</div>
+<div class="card-table">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">Todas as Provas</h6>
+        <span style="color:#6b7280;">{{ provas|length }} registro(s)</span>
+    </div>
+    <div class="p-0">
+        {% if provas %}
+        <table class="table table-hover mb-0">
+            <thead><tr><th>Usuário</th><th>ID</th><th>Nota</th><th>Resultado</th><th>Data</th></tr></thead>
+            <tbody>
+            {% for p in provas %}
+            <tr>
+                <td>{{ p.user_name }}</td>
+                <td><code>{{ p.user_id }}</code></td>
+                <td>{{ p.score }}/{{ p.total }}</td>
+                <td>{% if p.passed %}<span class="badge badge-aprovado">APROVADO</span>{% else %}<span class="badge badge-reprovado">REPROVADO</span>{% endif %}</td>
+                <td style="color:#6b7280;">{{ p.date[:19]|replace('T', ' ') }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state"><i class="bi bi-journal-text"></i><p>Nenhuma prova registrada.</p></div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

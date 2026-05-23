@@ -10,7 +10,7 @@ donoid = getdonoid()
 mensagemerro = getmensagemerro()
 
 #CARREGA E LE O ARQUIVO .env na raiz
-load_dotenv(os.path.join(os.path.dirname(__file__), '.env')) #load .env da raiz
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env')) #load .env da raiz
 
 # Flag para verificar se a configuração é válida
 config_valida = True
@@ -160,6 +160,12 @@ class CloseTicketView(discord.ui.View):
         else:
             print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
         
+        try:
+            from mongo_db import atualizar_ticket
+            atualizar_ticket(interaction.user.id, "fechado")
+        except Exception:
+            pass
+
         await asyncio.sleep(5)
         await interaction.channel.delete()
 
@@ -189,6 +195,13 @@ class TicketAdminView(discord.ui.View):
         new_embed = original_embed.copy()
         new_embed.color = discord.Color.green()
         new_embed.add_field(name="Atendido por", value=interaction.user.mention, inline=False)
+
+        try:
+            from mongo_db import atualizar_ticket
+            user_id = interaction.channel.name.split('-')[-1]
+            atualizar_ticket(user_id, "atendendo", interaction.user.name)
+        except Exception:
+            pass
 
         await interaction.message.edit(embed=new_embed, view=self)
         await interaction.channel.send(f"✅ O ticket está sendo atendido por {interaction.user.mention}.")
@@ -241,6 +254,12 @@ class CreateTicket(discord.ui.View):
                 embed_admin.add_field(name="Aberto", value=f"<t:{creation_timestamp}:R>", inline=True)
                 embed_admin.set_footer(text=f"ID do Usuário: {interaction.user.id}")
 
+                try:
+                    from mongo_db import salvar_ticket
+                    salvar_ticket(interaction.user.id, interaction.user.name, tipoticket, "aberto")
+                except Exception:
+                    pass
+
                 await ticket.send(
                     content=f"Novo ticket de {interaction.user.mention}. {atendente.mention}",
                     embed=embed_admin,
@@ -265,6 +284,20 @@ class CreateTicket(discord.ui.View):
                 await interaction.followup.send("Ocorreu um erro inesperado. Tente novamente mais tarde.", ephemeral=True)
 
 
+# Canal onde as transcrições de tickets antigos estão armazenadas
+ID_CANAL_TRANSCRICOES = 1362127333636706466
+
+EMOJI_PARA_TIPO = {
+    "📜": "Dúvidas sobre Regras",
+    "⚔️": "Guerras e CWL",
+    "🛡️": "Doações",
+    "🚨": "Denúncia",
+    "🔨": "Apelo de Banimento",
+    "💡": "Sugestão",
+    "📈": "Recrutamento",
+    "❔": "Outros Assuntos",
+}
+
 #INICIO DA CLASSE
 class atendimento(commands.Cog):
     def __init__(self, client: commands.Bot):
@@ -272,10 +305,49 @@ class atendimento(commands.Cog):
         self.client.add_view(DropdownSuporte())
         self.client.add_view(CloseTicketView())
         self.client.add_view(TicketAdminView()) # ADICIONA A NOVA VIEW
+        self._imported_tickets = False
 
     @commands.Cog.listener()
     async def on_ready(self):
         print("Cog atendimento (Clash of Clans) carregado.")
+        await self._importar_transcricoes_auto()
+
+    async def _importar_transcricoes_auto(self):
+        if self._imported_tickets:
+            return
+        try:
+            from mongo_db import get_db
+            db = get_db()
+            if db is None:
+                return
+            if db.tickets.count_documents({}) > 0:
+                self._imported_tickets = True
+                return
+            canal = self.client.get_channel(ID_CANAL_TRANSCRICOES)
+            if not canal:
+                print(f"Canal de transcrições {ID_CANAL_TRANSCRICOES} não encontrado.")
+                return
+            count = 0
+            async for msg in canal.history(limit=200):
+                if msg.attachments:
+                    for attach in msg.attachments:
+                        if attach.filename.endswith('.md'):
+                            nome_sem_ext = attach.filename[:-3]
+                            if '┃' in nome_sem_ext:
+                                emoji = nome_sem_ext.split('┃')[0]
+                                user_part = nome_sem_ext.split('┃', 1)[1]
+                                partes = user_part.rsplit('-', 1)
+                                if len(partes) == 2 and partes[1].isdigit():
+                                    user_id = partes[1]
+                                    user_name = partes[0]
+                                    tipo = EMOJI_PARA_TIPO.get(emoji, "Desconhecido")
+                                    from mongo_db import salvar_ticket
+                                    salvar_ticket(user_id, user_name, tipo, "fechado", "Importado automaticamente")
+                                    count += 1
+            print(f"Importação automática: {count} tickets salvos no MongoDB.")
+            self._imported_tickets = True
+        except Exception as e:
+            print(f"Erro na importação automática de tickets: {e}")
   
     #GRUPO PAINEIS
     painel=app_commands.Group(name="painel",description="Comandos de paineis de atendimento do bot.")
@@ -336,6 +408,40 @@ class atendimento(commands.Cog):
             await interaction.response.send_message(embed=discord.Embed(colour=discord.Color.red(), title="❌ Membro Removido", description=f"{membro.mention} foi removido deste ticket."))
         else:
             await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket.",ephemeral=True)
+
+    @atendi.command(name="importar-transcricoes", description="[Admin] Importa transcrições antigas para o MongoDB.")
+    @commands.has_permissions(administrator=True)
+    async def importar_transcricoes(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            from mongo_db import get_db, salvar_ticket
+            db = get_db()
+            if db is None:
+                await interaction.followup.send("❌ MongoDB não está conectado.", ephemeral=True)
+                return
+            canal = self.client.get_channel(ID_CANAL_TRANSCRICOES)
+            if not canal:
+                await interaction.followup.send(f"❌ Canal de transcrições ({ID_CANAL_TRANSCRICOES}) não encontrado.", ephemeral=True)
+                return
+            count = 0
+            async for msg in canal.history(limit=500):
+                if msg.attachments:
+                    for attach in msg.attachments:
+                        if attach.filename.endswith('.md'):
+                            nome_sem_ext = attach.filename[:-3]
+                            if '┃' in nome_sem_ext:
+                                emoji = nome_sem_ext.split('┃')[0]
+                                user_part = nome_sem_ext.split('┃', 1)[1]
+                                partes = user_part.rsplit('-', 1)
+                                if len(partes) == 2 and partes[1].isdigit():
+                                    user_id = partes[1]
+                                    user_name = partes[0]
+                                    tipo = EMOJI_PARA_TIPO.get(emoji, "Desconhecido")
+                                    salvar_ticket(user_id, user_name, tipo, "fechado", "Importado manualmente")
+                                    count += 1
+            await interaction.followup.send(f"✅ **{count}** tickets importados do canal de transcrições para o MongoDB.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Erro ao importar: {e}", ephemeral=True)
 
 async def setup(client:commands.Bot):
     if config_valida:

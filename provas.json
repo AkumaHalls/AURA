@@ -1,7 +1,7 @@
 {
   "config": {
-    "acertos_para_aprovar": 8,
-    "total_questoes_aplicadas": 10,
+    "acertos_para_aprovar": 12,
+    "total_questoes_aplicadas": 15,
     "tempo_cooldown_dias": 3
   },
   "questoes": [
@@ -334,6 +334,226 @@
         "Não é essencial, é opcional."
       ],
       "correta": 1
+    },
+    {
+      "id": 31,
+      "pergunta": "Quais são os 4 fatores que determinam uma promoção no B.A.D?",
+      "alternativas": [
+        "Tempo online, quantidade de amigos, sorte e carisma.",
+        "Participação em guerras, doações equilibradas, tempo de casa e comportamento exemplar.",
+        "Nível de base, quantidade de gemas, número de troféus e idade da conta.",
+        "Pedir educadamente, ser amigo do líder, atacar bem e doar muito."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 32,
+      "pergunta": "Qual a consequência de pedir cargo de Colíder ou Líder no B.A.D?",
+      "alternativas": [
+        "Recebe uma advertência verbal.",
+        "Ganha um desconto nas doações.",
+        "Banimento imediato ou rebaixamento.",
+        "É ignorado e promovido depois."
+      ],
+      "correta": 2
+    },
+    {
+      "id": 33,
+      "pergunta": "O que significa meritocracia no contexto do B.A.D?",
+      "alternativas": [
+        "Quem tem mais amigos sobe mais rápido.",
+        "Promoções baseadas em mérito: participação, doações, tempo e comportamento.",
+        "O líder escolhe quem ele mais gosta.",
+        "Quem pede mais vezes é promovido primeiro."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 34,
+      "pergunta": "Qual o procedimento CORRETO ao banir um membro como Staff?",
+      "alternativas": [
+        "Banir silenciosamente sem explicação.",
+        "Identificar a infração, consultar a tabela MR, enviar mensagem padrão com o código e executar a remoção.",
+        "Criar uma enquete no Discord para votação.",
+        "Apenas dar kick e bloquear o reingresso."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 35,
+      "pergunta": "Por que é obrigatório fazer os 2 ataques mesmo em uma guerra já ganha?",
+      "alternativas": [
+        "Para aumentar o saque individual.",
+        "Guerra ganha não é desculpa para não atacar — serve como treino e farm de estrelas para o clã.",
+        "Porque o jogo penaliza quem não ataca.",
+        "Apenas para manter as estatísticas pessoais."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 36,
+      "pergunta": "O que significa 'atacar com consciência' em guerras normais?",
+      "alternativas": [
+        "Atacar qualquer base disponível rapidamente.",
+        "Escolher um alvo compatível com seu nível onde você tem alta chance de 3 estrelas.",
+        "Sempre atacar o número 1 do inimigo.",
+        "Apenas atacar bases com muito ouro disponível."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 37,
+      "pergunta": "Por que atacar um alvo muito abaixo do seu nível (Dip) é prejudicial ao clã?",
+      "alternativas": [
+        "Porque o jogo reduz o saque obtido.",
+        "Porque rouba o alvo de um membro mais fraco e desperdiça um ataque forte.",
+        "Porque o inimigo pode se vingar mais facilmente.",
+        "Porque não dá experiência para o herói."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 38,
+      "pergunta": "O que um membro deve garantir ANTES de colocar o escudo verde (Disponível) para guerra?",
+      "alternativas": [
+        "Que possui tropas no exército.",
+        "Que seus heróis NÃO estão em melhoria e ele tem tempo para atacar.",
+        "Que o Centro de Vila está no nível máximo.",
+        "Que ele já doou pelo menos 1000 tropas na temporada."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 39,
+      "pergunta": "Qual regra ABSOLUTA sobre alvos na CWL (Liga de Guerra)?",
+      "alternativas": [
+        "Ataque qualquer base que ainda não foi atacada.",
+        "Ataque apenas o seu espelho (mesma posição), salvo autorização explícita da liderança.",
+        "Ataque sempre o número 1 para maximizar estrelas.",
+        "Ataque seguindo a ordem de força do clã."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 40,
+      "pergunta": "Na CWL, em qual única situação a liderança autoriza ataque fora do espelho?",
+      "alternativas": [
+        "Nunca é autorizado em hipótese alguma.",
+        "Quando há uma estratégia explícita para maximizar estrelas com troca de alvos.",
+        "Quando o membro não gosta do layout do espelho.",
+        "Quando o espelho já foi atacado por engano."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 41,
+      "pergunta": "Como a liderança verifica se houve violação de alvo na CWL?",
+      "alternativas": [
+        "Perguntando no chat geral.",
+        "Comparando o número do atacante na lista com o número da vila atacada (espelho).",
+        "Assistindo o replay de todos os ataques.",
+        "Não há como verificar."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 42,
+      "pergunta": "O que caracteriza um 'sanguessuga' no sistema de doações do B.A.D?",
+      "alternativas": [
+        "Um membro que doa tropas de nível baixo.",
+        "Um membro que passa a temporada inteira apenas pedindo tropas, sem doar (ex: 0 doados / 2000 recebidos).",
+        "Um membro que pede tropas muito caras.",
+        "Um membro que doa tropas erradas frequentemente."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 43,
+      "pergunta": "Qual infração é coberta pelo código MR08?",
+      "alternativas": [
+        "Não participar da guerra.",
+        "Não atingir a pontuação mínima nos Jogos do Clã.",
+        "Não doar tropas suficientes.",
+        "Comportamento tóxico no chat."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 44,
+      "pergunta": "Qual infração é coberta pelo código MR09?",
+      "alternativas": [
+        "Inatividade geral no clã.",
+        "Não gastar seus ataques no Fim de Semana de Raide (Capital).",
+        "Doar tropas erradas.",
+        "Pedir cargo de liderança."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 45,
+      "pergunta": "Por que contas 'rushadas' (CV alto com defesas baixas) não são aceitas no B.A.D?",
+      "alternativas": [
+        "Porque elas consomem muitos recursos.",
+        "Porque atraem inimigos fortes na guerra mas não conseguem se defender nem atacar o equivalente.",
+        "Porque o líder não gosta desse tipo de conta.",
+        "Porque o jogo bane contas rushadas."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 46,
+      "pergunta": "Qual o prazo máximo de inatividade sem aviso antes de gerar punição (MR06)?",
+      "alternativas": [
+        "3 dias.",
+        "5 dias.",
+        "7 dias.",
+        "10 dias."
+      ],
+      "correta": 1
+    },
+    {
+      "id": 47,
+      "pergunta": "Qual código MR deve ser aplicado a um membro que atacou fora do espelho na CWL sem autorização?",
+      "alternativas": [
+        "MR01",
+        "MR02",
+        "MR03",
+        "MR05"
+      ],
+      "correta": 2
+    },
+    {
+      "id": 48,
+      "pergunta": "Qual código MR cobre a infração de entrar em guerra com heróis em melhoria (escudo verde indevido)?",
+      "alternativas": [
+        "MR01",
+        "MR03",
+        "MR04",
+        "MR05"
+      ],
+      "correta": 3
+    },
+    {
+      "id": 49,
+      "pergunta": "Qual código MR deve ser usado para comportamento tóxico, brigas e desrespeito?",
+      "alternativas": [
+        "MR10",
+        "MR11",
+        "MR12",
+        "MR14"
+      ],
+      "correta": 0
+    },
+    {
+      "id": 50,
+      "pergunta": "Qual código MR é aplicado a membros que fazem spam ou recrutamento para outros clãs?",
+      "alternativas": [
+        "MR10",
+        "MR11",
+        "MR12",
+        "MR14"
+      ],
+      "correta": 3
     }
   ]
 }

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-speedometer2"></i> Dashboard</h4>
+    <span style="color:#6b7280;">Última atualização: <span id="update-time"></span></span>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#1a3a2a;"><i class="bi bi-journal-check" style="color:#4ade80;"></i></div>
+            <div><small style="color:#6b7280;">Total Provas</small><h5 class="mb-0">{{ stats.total_provas }}</h5></div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#1a3a2a;"><i class="bi bi-check-circle" style="color:#4ade80;"></i></div>
+            <div><small style="color:#6b7280;">Aprovados</small><h5 class="mb-0">{{ stats.aprovados }}</h5></div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#3a1a1a;"><i class="bi bi-x-circle" style="color:#f87171;"></i></div>
+            <div><small style="color:#6b7280;">Reprovados</small><h5 class="mb-0">{{ stats.reprovados }}</h5></div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#1a1a3a;"><i class="bi bi-ticket" style="color:#60a5fa;"></i></div>
+            <div><small style="color:#6b7280;">Tickets</small><h5 class="mb-0">{{ stats.total_tickets }}</h5></div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-8">
+        <div class="card-table">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-clock-history"></i> Últimas Provas</h6></div>
+            <div class="p-0">
+                {% if provas_recentes %}
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Usuário</th><th>Nota</th><th>Resultado</th><th>Data</th></tr></thead>
+                    <tbody>
+                    {% for p in provas_recentes %}
+                    <tr>
+                        <td><span title="{{ p.user_id }}">{{ p.user_name }}</span></td>
+                        <td>{{ p.score }}/{{ p.total }}</td>
+                        <td>{% if p.passed %}<span class="badge badge-aprovado">APROVADO</span>{% else %}<span class="badge badge-reprovado">REPROVADO</span>{% endif %}</td>
+                        <td style="color:#6b7280;">{{ p.date[:19]|replace('T', ' ') }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state"><i class="bi bi-journal-text"></i><p>Nenhuma prova realizada ainda.</p></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card-table">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-pie-chart"></i> Taxa de Aprovação</h6></div>
+            <div class="card-body text-center">
+                {% if stats.total_provas > 0 %}
+                <canvas id="approvalChart" height="200"></canvas>
+                <div class="mt-3">
+                    <span class="badge badge-aprovado">{{ "%.1f"|format(stats.aprovados / stats.total_provas * 100) }}%</span>
+                    <small style="color:#6b7280;"> de aprovação</small>
+                </div>
+                {% else %}
+                <div class="empty-state"><i class="bi bi-bar-chart"></i><p>Sem dados ainda.</p></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('update-time').textContent = new Date().toLocaleString('pt-BR');
+{% if stats.total_provas > 0 %}
+new Chart(document.getElementById('approvalChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Aprovados', 'Reprovados'],
+        datasets: [{
+            data: [{{ stats.aprovados }}, {{ stats.reprovados }}],
+            backgroundColor: ['#4ade80', '#f87171'],
+            borderWidth: 0
+        }]
+    },
+    options: { cutout: '70%', plugins: { legend: { display: false } } }
+});
+{% endif %}
+</script>
+{% endblock %}
