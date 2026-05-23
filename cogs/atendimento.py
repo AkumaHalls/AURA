@@ -156,26 +156,31 @@ class CloseTicketView(discord.ui.View):
         user_id = canal.name.split('-')[-1]
         nome_canal = canal.name
 
-        # --- SALVA TRANSCRIPT EM ARQUIVO ---
+        # --- COLETA TRANSCRIPT DA THREAD ---
+        transcript_lines = []
+        try:
+            async for message in canal.history(limit=None, oldest_first=True):
+                created = datetime.strftime(message.created_at, "%d/%m/%Y às %H:%M:%S")
+                line = f"[{created}] {message.author}: {message.clean_content}"
+                transcript_lines.append(line)
+        except Exception as e:
+            print(f"ERRO ao ler historico do ticket {nome_canal}: {e}")
+
+        # --- SALVA TRANSCRIPT EM ARQUIVO (canal de logs) ---
         log_channel = None
         if interaction.guild and interaction.guild.id == id_servidor_bh: 
             log_channel = interaction.guild.get_channel(id_canal_logs_bh)
         elif interaction.guild and interaction.guild.id == id_servidor_tribunal: 
             log_channel = interaction.guild.get_channel(id_canal_logs_tri)
 
-        transcript_lines = []
         if log_channel:
             log_filename = f"{canal.id}.md"
             try:
-                with open(log_filename, 'a', encoding="utf-8") as f:
+                with open(log_filename, 'w', encoding="utf-8") as f:
                     f.write(f"# Histórico de {nome_canal}:\n\n")
-                    async for message in canal.history(limit=None, oldest_first=True):
-                        created = datetime.strftime(message.created_at, "%d/%m/%Y às %H:%M:%S")
-                        line = f"[{created}] {message.author}: {message.clean_content}"
+                    for line in transcript_lines:
                         f.write(line + "\n")
-                        transcript_lines.append(line)
-                    rodape = f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*"
-                    f.write(rodape)
+                    f.write(f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*")
                 
                 with open(log_filename, 'rb') as f:
                     await log_channel.send(f"Transcrição do ticket `{nome_canal}`:", file=discord.File(f, f"{nome_canal}.md"))
@@ -184,7 +189,7 @@ class CloseTicketView(discord.ui.View):
             except Exception as e:
                 print(f"ERRO ao salvar o log do ticket {nome_canal}: {e}")
         else:
-            print(f"AVISO: O salvamento de log foi ignorado.")
+            print(f"AVISO: Salvamento de log ignorado (sem canal configurado).")
         
         # --- SALVA NO MONGODB (status + transcript) ---
         try:
@@ -192,14 +197,14 @@ class CloseTicketView(discord.ui.View):
             db = get_db()
             if db is not None:
                 db.tickets.update_one(
-                    {"user_id": str(user_id), "status": "aberto"},
+                    {"user_id": str(user_id), "status": {"$ne": "fechado"}},
                     {"$set": {
                         "status": "fechado",
                         "transcript": "\n".join(transcript_lines),
                         "atendente": interaction.user.name
                     }}
                 )
-                print(f"MongoDB: Ticket de user {user_id} fechado com transcript salvo.")
+                print(f"MongoDB: Ticket de user {user_id} fechado com {len(transcript_lines)} linhas de transcript.")
         except Exception as e:
             print(f"Erro ao fechar ticket no MongoDB: {e}")
 
