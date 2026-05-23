@@ -50,7 +50,7 @@ def _garantir_conexao():
 
 def salvar_prova(user_id, user_name, score, total, passed, respostas):
     _garantir_conexao()
-    if not db:
+    if db is None:
         print("MongoDB: Não foi possível salvar prova (sem conexão)")
         return
     try:
@@ -69,7 +69,7 @@ def salvar_prova(user_id, user_name, score, total, passed, respostas):
 
 def salvar_ticket(user_id, user_name, tipo, status, atendente=None):
     _garantir_conexao()
-    if not db:
+    if db is None:
         print("MongoDB: Não foi possível salvar ticket (sem conexão)")
         return
     try:
@@ -87,7 +87,7 @@ def salvar_ticket(user_id, user_name, tipo, status, atendente=None):
 
 def atualizar_ticket(user_id, status, atendente=None):
     _garantir_conexao()
-    if not db:
+    if db is None:
         print("MongoDB: Não foi possível atualizar ticket (sem conexão)")
         return
     try:
@@ -102,7 +102,7 @@ def atualizar_ticket(user_id, status, atendente=None):
         print(f"Erro ao atualizar ticket no MongoDB: {e}")
 
 def listar_provas(limite=50):
-    if not db: return []
+    if db is None: return []
     try:
         return list(db.provas.find({}, {"_id": 0}).sort("date", -1).limit(limite))
     except Exception as e:
@@ -110,7 +110,7 @@ def listar_provas(limite=50):
         return []
 
 def listar_tickets(limite=50):
-    if not db: return []
+    if db is None: return []
     try:
         return list(db.tickets.find({}, {"_id": 0}).sort("data", -1).limit(limite))
     except Exception as e:
@@ -118,7 +118,7 @@ def listar_tickets(limite=50):
         return []
 
 def deletar_prova(user_id, date):
-    if not db: return False
+    if db is None: return False
     try:
         r = db.provas.delete_one({"user_id": str(user_id), "date": date})
         return r.deleted_count > 0
@@ -127,7 +127,7 @@ def deletar_prova(user_id, date):
         return False
 
 def deletar_ticket(user_id, data):
-    if not db: return False
+    if db is None: return False
     try:
         r = db.tickets.delete_one({"user_id": str(user_id), "data": data})
         return r.deleted_count > 0
@@ -136,7 +136,7 @@ def deletar_ticket(user_id, data):
         return False
 
 def stats_dashboard():
-    if not db: return {"total_provas": 0, "aprovados": 0, "reprovados": 0, "total_tickets": 0}
+    if db is None: return {"total_provas": 0, "aprovados": 0, "reprovados": 0, "total_tickets": 0}
     try:
         total = db.provas.count_documents({})
         aprovados = db.provas.count_documents({"passed": True})
