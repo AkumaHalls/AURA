@@ -45,7 +45,7 @@ class onwer(commands.Cog):
     # GRUPO DE COMANDOS 'dono'
     dono = app_commands.Group(name="owner", description="Comandos de dono do bot.")
 
-    @dono.command(name="say", description="🦊⠂Diga alguma coisa como Brix")
+    @dono.command(name="say", description="🦊⠂Diga alguma coisa como AURA")
     @app_commands.describe(mensagem="Qual é a mensagem?")
     async def say(self, interaction: discord.Interaction, mensagem: str):
         print(f"Comando say - User: {interaction.user.name} - mensagem:{mensagem}")
@@ -55,7 +55,7 @@ class onwer(commands.Cog):
         else:
             await interaction.response.send_message(mensagemerro, ephemeral=True)
 
-    @dono.command(name="listar", description="🦊⠂lista os servidores que o Brix está.")
+    @dono.command(name="listar", description="🦊⠂lista os servidores que o AURA está.")
     async def listservers(self, interaction: discord.Interaction):
         print(f"Usuario: {interaction.user.name} usou lista servidores")
         if interaction.user.id == donoid:
@@ -68,7 +68,7 @@ class onwer(commands.Cog):
         else:
             await interaction.response.send_message(mensagemerro, ephemeral=True)
 
-    @dono.command(name="sair", description="🦊⠂Faz o Brix sair de um servidor.")
+    @dono.command(name="sair", description="🦊⠂Faz o AURA sair de um servidor.")
     @app_commands.describe(id_servidor="Qual é a ID do servidor?")
     async def leave(self, interaction: discord.Interaction, id_servidor: str):
         print(f"Usuario: {interaction.user.name} usou sair servidores")
@@ -164,7 +164,7 @@ class onwer(commands.Cog):
         resposta = discord.Embed(
             colour=discord.Color.yellow(),
             title="🦊┃Ajuda sobre o bot",
-            description="Eaeee O Braixen aqui, ainda estou em desenvolvimento"
+            description="Eaeee AURA aqui, ainda estou em desenvolvimento"
         )
         await interaction.response.send_message(embed=resposta)
 

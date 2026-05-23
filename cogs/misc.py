@@ -111,9 +111,9 @@ class misc(commands.Cog):
         print(f"mandando lembrete de bump para {message.guild.name}!")
         if cargo is not None:
           #se tem cargo bump roda isso, caso contrario roda oque ta no else
-          await message.channel.send(f"<a:patpatBraixen:1112706846042628126>┃ Eaiii <@&{cargo.id}> já podem dar </bump:947088344167366698> novamente!")
+          await message.channel.send(f"<a:patpatAura:1112706846042628126>┃ Eaiii <@&{cargo.id}> já podem dar </bump:947088344167366698> novamente!")
         else: 
-          await message.channel.send(f"<a:patpatBraixen:1112706846042628126>┃ Eaiii já podem dar </bump:947088344167366698> novamente! \n<:UlikeKissingBraixens:1108359276126285867> ┃ **Dica de raposa:** Crie em sua comunidade o cargo chamado `👍 Bump` para que eu possa notificar nele os proximos bumps ~kyu.")
+          await message.channel.send(f"<a:patpatAura:1112706846042628126>┃ Eaiii já podem dar </bump:947088344167366698> novamente! \n<:UlikeKissingAura:1108359276126285867> ┃ **Dica de raposa:** Crie em sua comunidade o cargo chamado `👍 Bump` para que eu possa notificar nele os proximos bumps ~kyu.")
 
 
   @commands.Cog.listener()
@@ -123,7 +123,7 @@ class misc(commands.Cog):
       i = afklist.index(user.id)
       afklist.remove(afklist[i+1])
       afklist.remove(user.id)
-      msgenviada = await channel.send(f"<:BraixTongue:905841511323828265>┃ {user.mention} seu afk foi desativado!!!")
+      msgenviada = await channel.send(f"<:AuraTongue:905841511323828265>┃ {user.mention} seu afk foi desativado!!!")
       print(f"{user.mention} saiu do afk")
       await asyncio.sleep(15.0)
       await msgenviada.delete()
