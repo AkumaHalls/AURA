@@ -95,6 +95,18 @@ class onwer(commands.Cog):
         else:
             await interaction.response.send_message(mensagemerro, ephemeral=True)
 
+    @dono.command(name="sync", description="🦊⠂Força a sincronização dos comandos slash em todos os servidores")
+    async def sync_commands(self, interaction: discord.Interaction):
+        if interaction.user.id != donoid:
+            return await interaction.response.send_message(mensagemerro, ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            for guild in self.client.guilds:
+                await self.client.tree.sync(guild=guild)
+            await interaction.followup.send(f"✅ Comandos sincronizados em **{len(self.client.guilds)}** servidor(es).")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Erro ao sincronizar: {e}")
+
     @dono.command(name="bot-avatar", description="🦊⠂Define um novo avatar ao bot")
     @app_commands.describe(avatar="Qual é o novo avatar?")
     async def set_bot_avatar(self, interaction: discord.Interaction, avatar: discord.Attachment):
