@@ -343,8 +343,7 @@ class atendimento(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
         self.client.add_view(DropdownSuporte())
-        self.client.add_view(CloseTicketView())
-        self.client.add_view(TicketAdminView()) # ADICIONA A NOVA VIEW
+        self.client.add_view(TicketAdminView())
         self._imported_tickets = False
 
     @commands.Cog.listener()
