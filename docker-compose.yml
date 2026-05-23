@@ -1,0 +1,17 @@
+services:
+  bot:
+    build: .
+    container_name: aura-bot
+    restart: unless-stopped
+    ports:
+      - "2501:2501"
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - OWNER_ID=${OWNER_ID}
+      - COC_EMAIL=${COC_EMAIL}
+      - COC_PASSWORD=${COC_PASSWORD}
+      - CLAN_TAG=${CLAN_TAG}
+      - MONGO_URI=${MONGO_URI}
+      - WEB_PANEL_PASSWORD=${WEB_PANEL_PASSWORD}
+      - ID_CANAL_TRANSCRICOES=${ID_CANAL_TRANSCRICOES}
+      - TZ=America/Sao_Paulo

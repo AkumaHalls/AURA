@@ -1,0 +1,8 @@
+.git
+.gitattributes
+.gitignore
+squarecloud.app
+README.md
+__pycache__
+*.pyc
+.env
