@@ -18,7 +18,7 @@
             <tr>
                 <td>{{ t.user_name }}</td>
                 <td>{{ t.tipo }}</td>
-                <td>{% if t.status == 'aberto' %}<span class="badge" style="background:#1a3a3a;color:#22d3ee;">Aberto</span>{% else %}<span class="badge" style="background:#1a1a3a;color:#818cf8;">Fechado</span>{% endif %}</td>
+                <td>{% if t.status == 'aberto' %}<span class="badge" style="background:#1a3a2a;color:#4ade80;">Aberto</span>{% elif t.status == 'atendendo' %}<span class="badge" style="background:#1a2a3a;color:#60a5fa;">Em Atendimento</span>{% else %}<span class="badge" style="background:#2a1a1a;color:#f87171;">Fechado</span>{% endif %}</td>
                 <td>{{ t.atendente or '—' }}</td>
                 <td style="color:#6b7280;">{{ t.data[:19]|replace('T', ' ') }}</td>
                 <td>

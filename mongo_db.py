@@ -81,7 +81,7 @@ def salvar_ticket(user_id, user_name, tipo, status, atendente=None):
             "atendente": atendente,
             "data": datetime.now().isoformat()
         })
-        print(f"MongoDB: Ticket de {user_name} salvo ({tipo})")
+        print(f"MongoDB: Ticket de {user_name} salvo ({tipo}) - status: {status}")
     except Exception as e:
         print(f"Erro ao salvar ticket no MongoDB: {e}")
 

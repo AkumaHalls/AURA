@@ -143,8 +143,16 @@ class CloseTicketView(discord.ui.View):
 
     @discord.ui.button(label="Fechar Ticket", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="fechar_ticket_confirm")
     async def fechar_ticket_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(f"Okay! Salvando o histórico e fechando este ticket em 5 segundos...")
-        
+        canal = interaction.channel
+        if not canal or not canal.name:
+            await interaction.response.send_message("Erro: não foi possível identificar o canal do ticket.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("Okay! Salvando o histórico e fechando este ticket em 5 segundos...")
+
+        user_id = canal.name.split('-')[-1]
+        nome_canal = canal.name
+
         # --- LÓGICA DE SALVAMENTO ---
         log_channel = None
         if interaction.guild.id == id_servidor_bh: 
@@ -153,32 +161,35 @@ class CloseTicketView(discord.ui.View):
             log_channel = interaction.guild.get_channel(id_canal_logs_tri)
 
         if log_channel:
-            log_filename = f"{interaction.channel.id}.md"
+            log_filename = f"{canal.id}.md"
             try:
                 with open(log_filename, 'a', encoding="utf-8") as f:
-                    f.write(f"# Histórico de {interaction.channel.name}:\n\n")
-                    async for message in interaction.channel.history(limit=None, oldest_first=True):
+                    f.write(f"# Histórico de {nome_canal}:\n\n")
+                    async for message in canal.history(limit=None, oldest_first=True):
                         created = datetime.strftime(message.created_at, "%d/%m/%Y às %H:%M:%S")
                         f.write(f"[{created}] {message.author}: {message.clean_content}\n")
                     f.write(f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*")
                 
                 with open(log_filename, 'rb') as f:
-                    await log_channel.send(f"Transcrição do ticket `{interaction.channel.name}`:", file=discord.File(f, f"{interaction.channel.name}.md"))
+                    await log_channel.send(f"Transcrição do ticket `{nome_canal}`:", file=discord.File(f, f"{nome_canal}.md"))
                 os.remove(log_filename)
-                print(f"Log do ticket {interaction.channel.name} salvo com sucesso em {log_channel.name}.")
+                print(f"Log do ticket {nome_canal} salvo com sucesso em {log_channel.name}.")
             except Exception as e:
-                print(f"ERRO ao salvar o log do ticket {interaction.channel.name}: {e}")
+                print(f"ERRO ao salvar o log do ticket {nome_canal}: {e}")
         else:
             print(f"AVISO: O salvamento de log foi ignorado para o servidor '{interaction.guild.name}' (ID: {interaction.guild.id}).")
         
         try:
             from mongo_db import atualizar_ticket
-            atualizar_ticket(interaction.user.id, "fechado")
+            atualizar_ticket(user_id, "fechado")
         except Exception:
             pass
 
         await asyncio.sleep(5)
-        await interaction.channel.delete()
+        try:
+            await canal.delete()
+        except Exception:
+            pass
 
     @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="↩️", custom_id="cancelar_fechar_ticket")
     async def cancelar_fechar_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
