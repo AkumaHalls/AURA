@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Prova - {{ prova.user_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-journal-text"></i> Prova de {{ prova.user_name }}</h4>
+    <a href="/provas" class="btn btn-sm" style="background:#2d3139;color:#e1e3e6;border:none;border-radius:8px;padding:.5rem 1rem;"><i class="bi bi-arrow-left"></i> Voltar</a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#1a3a2a;"><i class="bi bi-person" style="color:#4ade80;"></i></div>
+            <div><small style="color:#6b7280;">Usuário</small><h6 class="mb-0">{{ prova.user_name }}</h6></div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#1a1a3a;"><i class="bi bi-star" style="color:#60a5fa;"></i></div>
+            <div><small style="color:#6b7280;">Nota</small><h6 class="mb-0">{{ prova.score }}/{{ prova.total }}</h6></div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#1a3a2a;"><i class="bi bi-check-circle" style="color:#4ade80;"></i></div>
+            <div><small style="color:#6b7280;">Resultado</small>
+                <h6 class="mb-0">
+                    {% if prova.passed %}<span class="badge badge-aprovado">APROVADO</span>
+                    {% else %}<span class="badge badge-reprovado">REPROVADO</span>
+                    {% endif %}
+                </h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card d-flex align-items-center gap-3">
+            <div class="icon" style="background:#3a1a1a;"><i class="bi bi-clock" style="color:#f87171;"></i></div>
+            <div><small style="color:#6b7280;">Data</small><h6 class="mb-0">{{ prova.date[:19]|replace('T', ' ') }}</h6></div>
+        </div>
+    </div>
+</div>
+
+{% if prova.respostas %}
+<div class="card-table">
+    <div class="card-header"><h6 class="mb-0"><i class="bi bi-list-check"></i> Respostas</h6></div>
+    <div class="p-0">
+        {% for r in prova.respostas %}
+        <div style="padding:1rem 1.25rem;border-bottom:1px solid #2d3139;{% if r.acertou %}background:#0a1f0f;{% else %}background:#1f0a0a;{% endif %}">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span style="font-size:1.1rem;">{% if r.acertou %}✅{% else %}❌{% endif %}</span>
+                <strong style="color:#e1e3e6;">Q{{ r.id }}:</strong>
+                <span style="color:#9ba1a6;">{{ r.pergunta }}</span>
+            </div>
+            <div style="margin-left:32px;font-size:.85rem;">
+                <div style="color:#f87171;">✘ Escolhida: {{ r.escolhida }}</div>
+                <div style="color:#4ade80;">✔ Correta: {{ r.correta }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="empty-state"><i class="bi bi-journal-text"></i><p>Nenhum detalhe de resposta disponível.</p></div>
+{% endif %}
+{% endblock %}

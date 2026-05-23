@@ -57,11 +57,11 @@ class ProvaView(ui.View):
         random.shuffle(alternativas_com_indice)
         
         options = []
+        alternativas_texto = []
         for i, (indice_original, texto) in enumerate(alternativas_com_indice):
             letra = chr(65 + i) # A, B, C, D...
-            # Discord limita o label a 100 caracteres
-            label_texto = texto[:98] + ".." if len(texto) > 98 else texto
-            options.append(discord.SelectOption(label=f"{letra}) {label_texto}", value=str(indice_original)))
+            options.append(discord.SelectOption(label=f"{letra}) {texto[:95]}", value=str(indice_original)))
+            alternativas_texto.append(f"**{letra})** {texto}")
 
         self.select = discord.ui.Select(placeholder="Selecione a resposta correta...", options=options)
         self.select.callback = self.callback
@@ -72,7 +72,8 @@ class ProvaView(ui.View):
             description=f"**{questao['pergunta']}**\n\n⏳ **Tempo restante:** <t:{timestamp_fim}:R>",
             color=discord.Color.blue()
         )
-        self.embed.set_footer(text=f"Selecione a melhor opção abaixo.")
+        self.embed.add_field(name="Alternativas", value="\n\n".join(alternativas_texto), inline=False)
+        self.embed.set_footer(text="Selecione a letra correspondente no menu abaixo.")
 
     async def callback(self, interaction: discord.Interaction):
         self.value = int(self.select.values[0])
@@ -199,11 +200,20 @@ class SistemaProva(commands.Cog):
         config = self.questoes_data['config']
         todas_questoes = self.questoes_data['questoes']
 
+        # Remove duplicatas por id (mantém a primeira ocorrência)
+        ids_vistos = set()
+        questoes_unicas = []
+        for q in todas_questoes:
+            qid = q.get("id")
+            if qid not in ids_vistos:
+                ids_vistos.add(qid)
+                questoes_unicas.append(q)
+
         qtd_questoes = config.get('total_questoes_aplicadas', 10)
-        if len(todas_questoes) < qtd_questoes:
-            questoes_selecionadas = todas_questoes
+        if len(questoes_unicas) < qtd_questoes:
+            questoes_selecionadas = questoes_unicas
         else:
-            questoes_selecionadas = random.sample(todas_questoes, qtd_questoes)
+            questoes_selecionadas = random.sample(questoes_unicas, qtd_questoes)
 
         # 3. CRIAÇÃO DA DM
         try:

@@ -104,6 +104,24 @@ def tickets():
         todos = []
     return render_template('tickets.html', active='tickets', tickets=todos)
 
+@app.route('/prova/<user_id>/<path:date>')
+@login_required
+def prova_detail(user_id, date):
+    try:
+        from mongo_db import get_db
+        db = get_db()
+        if db is None:
+            flash('MongoDB não conectado.', 'warning')
+            return redirect(url_for('provas'))
+        prova = db.provas.find_one({"user_id": user_id, "date": date}, {"_id": 0})
+        if not prova:
+            flash('Prova não encontrada.', 'warning')
+            return redirect(url_for('provas'))
+        return render_template('prova_detail.html', active='provas', prova=prova)
+    except Exception as e:
+        flash(f'Erro ao carregar prova: {e}', 'danger')
+        return redirect(url_for('provas'))
+
 @app.route('/ticket/<user_id>/<path:data>')
 @login_required
 def ticket_detail(user_id, data):
