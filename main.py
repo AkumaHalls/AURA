@@ -57,29 +57,16 @@ class Client(commands.Bot):
         await self.wait_until_ready()
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Bem vindo"))  # Define o status do bot
         if not self.synced:
-            # Sincroniza comandos para TODOS os servidores onde o bot está
-            # Se TEST_GUILD_ID for definido, também inclui ele(s)
-            guild_ids = set()
-            test_ids = os.getenv("TEST_GUILD_ID", "")
-            if test_ids:
-                for gid in test_ids.split(","):
-                    gid = gid.strip()
-                    if gid:
-                        guild_ids.add(gid)
-            # Adiciona todos os servidores que o bot já está
+            # Remove comandos antigos por guild para evitar conflitos de cache
             for guild in self.guilds:
-                guild_ids.add(str(guild.id))
-            if guild_ids:
-                for gid in sorted(guild_ids):
-                    try:
-                        guild_obj = discord.Object(id=int(gid))
-                        await self.tree.sync(guild=guild_obj)
-                        print(f"Comandos sincronizados para guild {gid}")
-                    except Exception as e:
-                        print(f"Falha ao sincronizar guild {gid}: {e}")
-            else:
-                await self.tree.sync()
-                print("Comandos sincronizados globalmente (fallback).")
+                try:
+                    self.tree.clear_commands(guild=guild)
+                    await self.tree.sync(guild=guild)
+                except:
+                    pass
+            # Sincroniza globalmente (ate 1h para propagar, mas resolve cache quebrado)
+            await self.tree.sync()
+            print("Comandos sincronizados globalmente.")
             self.synced = True
             print(f"Comandos sincronizados: {self.synced}")
         print(f"\nO bot {self.user} já está online e disponível.")
