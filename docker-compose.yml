@@ -6,16 +6,22 @@ services:
     ports:
       - "2501:2501"
     environment:
+      # Discord
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - DONO_ID=${DONO_ID}
       - OWNER_ID=${OWNER_ID}
       - TEST_GUILD_ID=${TEST_GUILD_ID}
+
+      # Clash of Clans API
       - COC_EMAIL=${COC_EMAIL}
       - COC_PASSWORD=${COC_PASSWORD}
       - CLAN_TAG=${CLAN_TAG}
+
+      # MongoDB / Web Panel
       - MONGO_URI=${MONGO_URI}
       - WEB_PANEL_PASSWORD=${WEB_PANEL_PASSWORD}
-      - ID_CANAL_TRANSCRICOES=${ID_CANAL_TRANSCRICOES}
+
+      # Atendimento (IDs Discord)
       - id_cargo_atendente=${id_cargo_atendente}
       - id_canal_suporte=${id_canal_suporte}
       - id_categoria_staff=${id_categoria_staff}
@@ -24,4 +30,20 @@ services:
       - id_canal_avaliacao=${id_canal_avaliacao}
       - id_servidor_tribunal=${id_servidor_tribunal}
       - id_canal_logs_tri=${id_canal_logs_tri}
+      - ID_CANAL_TRANSCRICOES=${ID_CANAL_TRANSCRICOES}
+
+      # Autorole
+      - CANAL_REGISTRO_ID=${CANAL_REGISTRO_ID}
+      - CARGO_MEMBRO_ID=${CARGO_MEMBRO_ID}
+      - CARGO_BANIDO_ID=${CARGO_BANIDO_ID}
+
+      # ClashLog Manager (registro, cargos, etc.)
+      - REGISTRATION_CHANNEL_ID=${REGISTRATION_CHANNEL_ID}
+      - LOG_CHANNEL_ID=${LOG_CHANNEL_ID}
+      - APPROVAL_LOG_CHANNEL_ID=${APPROVAL_LOG_CHANNEL_ID}
+      - COC_MEMBER_ROLE_ID=${COC_MEMBER_ROLE_ID}
+      - COC_ELDER_ROLE_ID=${COC_ELDER_ROLE_ID}
+      - COC_COLEADER_ROLE_ID=${COC_COLEADER_ROLE_ID}
+      - KICK_MESSAGE=${KICK_MESSAGE}
+
       - TZ=America/Sao_Paulo
