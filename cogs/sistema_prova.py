@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from discord.ext import commands
 from discord import app_commands, ui
 from dotenv import load_dotenv
+from mongo_db import salvar_aprovacao_pendente, get_aprovacao_pendente, deletar_aprovacao_pendente, listar_aprovacoes_pendentes, atualizar_status_aprovacao
 
 # --- CONFIGURAÇÃO DE CANAIS ---
 ID_CANAL_BACKUP = 1460621468152107095   # Canal para enviar o JSON
@@ -23,25 +24,49 @@ except (ValueError, TypeError):
 # --- CLASSES DE INTERFACE ---
 
 class IntroView(ui.View):
-    def __init__(self):
-        super().__init__(timeout=300)
+    def __init__(self, cog=None, user_id=None, questoes=None, config=None):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.user_id = user_id
+        self.questoes = questoes
+        self.config = config
         self.confirmado = False
 
-    @ui.button(label="Começar Avaliação", style=discord.ButtonStyle.green, emoji="✅")
-    async def confirmar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        btn_iniciar = ui.Button(label="Começar Avaliação", style=discord.ButtonStyle.green, emoji="✅", custom_id=f"prova_iniciar:{user_id}")
+        btn_iniciar.callback = self._confirmar
+        self.add_item(btn_iniciar)
+
+        btn_cancelar = ui.Button(label="Cancelar", style=discord.ButtonStyle.red, emoji="✖️", custom_id=f"prova_cancelar:{user_id}")
+        btn_cancelar.callback = self._cancelar
+        self.add_item(btn_cancelar)
+
+    async def _confirmar(self, interaction: discord.Interaction):
         self.confirmado = True
-        # Desabilita botões após clicar
         for child in self.children:
             child.disabled = True
         await interaction.response.edit_message(view=self)
         self.stop()
 
-    @ui.button(label="Cancelar", style=discord.ButtonStyle.red, emoji="✖️")
-    async def cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        questoes = self.questoes
+        config = self.config
+        if not questoes or not config:
+            dados = get_aprovacao_pendente(self.user_id)
+            if dados:
+                questoes = dados.get("questoes")
+                config = dados.get("config")
+
+        if not questoes or not config:
+            return
+
+        deletar_aprovacao_pendente(self.user_id)
+        await self.cog._run_exam_loop(interaction.channel, interaction.user, self.user_id, questoes, config)
+
+    async def _cancelar(self, interaction: discord.Interaction):
         self.confirmado = False
         for child in self.children:
             child.disabled = True
         await interaction.response.edit_message(content="❌ Avaliação cancelada.", view=self, embed=None)
+        deletar_aprovacao_pendente(self.user_id)
         self.stop()
 
 class ProvaView(ui.View):
@@ -82,8 +107,8 @@ class ProvaView(ui.View):
         self.stop()
 
 class OwnerApprovalView(ui.View):
-    def __init__(self, cog, user_id, user, dm_channel, questoes, config):
-        super().__init__(timeout=300)
+    def __init__(self, cog, user_id, user=None, dm_channel=None, questoes=None, config=None):
+        super().__init__(timeout=None)
         self.cog = cog
         self.user_id = user_id
         self.user = user
@@ -91,8 +116,15 @@ class OwnerApprovalView(ui.View):
         self.questoes = questoes
         self.config = config
 
-    @ui.button(label="Aprovar", style=discord.ButtonStyle.green, emoji="✅")
-    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        btn_aprovar = ui.Button(label="Aprovar", style=discord.ButtonStyle.green, emoji="✅", custom_id=f"prova_aprovar:{user_id}")
+        btn_aprovar.callback = self._approve
+        self.add_item(btn_aprovar)
+
+        btn_negar = ui.Button(label="Negar", style=discord.ButtonStyle.red, emoji="✖️", custom_id=f"prova_negar:{user_id}")
+        btn_negar.callback = self._deny
+        self.add_item(btn_negar)
+
+    async def _approve(self, interaction: discord.Interaction):
         if interaction.user.id != OWNER_ID:
             return await interaction.response.send_message("Apenas o dono do bot pode aprovar.", ephemeral=True)
 
@@ -100,18 +132,58 @@ class OwnerApprovalView(ui.View):
             child.disabled = True
         await interaction.response.edit_message(content="✅ **Usuário aprovado!** A prova será iniciada no privado dele.", view=self, embed=None)
 
-        await self.dm_channel.send("✅ **Você foi aprovado para realizar a prova de Co-Líder!** Prepare-se, o exame vai começar em instantes...")
-        await self.cog._run_exam(self.dm_channel, self.user, self.user_id, self.questoes, self.config)
+        user = self.user
+        if user is None:
+            try:
+                user = await self.cog.client.fetch_user(int(self.user_id))
+            except:
+                return
 
-    @ui.button(label="Negar", style=discord.ButtonStyle.red, emoji="✖️")
-    async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+        dm_channel = self.dm_channel
+        if dm_channel is None:
+            try:
+                dm_channel = await user.create_dm()
+            except:
+                return
+
+        questoes = self.questoes
+        config = self.config
+        if not questoes or not config:
+            dados = get_aprovacao_pendente(self.user_id)
+            if dados:
+                questoes = dados.get("questoes")
+                config = dados.get("config")
+
+        if not questoes or not config:
+            return
+
+        await dm_channel.send("✅ **Você foi aprovado para realizar a prova de Co-Líder!** Prepare-se, o exame vai começar em instantes...")
+        await self.cog._run_exam(dm_channel, user, self.user_id, questoes, config)
+
+    async def _deny(self, interaction: discord.Interaction):
         if interaction.user.id != OWNER_ID:
             return await interaction.response.send_message("Apenas o dono do bot pode negar.", ephemeral=True)
 
         for child in self.children:
             child.disabled = True
         await interaction.response.edit_message(content="❌ **Solicitação negada.**", view=self, embed=None)
-        await self.dm_channel.send("❌ Sua solicitação para realizar a prova foi **negada** pela liderança.")
+        deletar_aprovacao_pendente(self.user_id)
+
+        user = self.user
+        dm_channel = self.dm_channel
+        if user is None:
+            try:
+                user = await self.cog.client.fetch_user(int(self.user_id))
+            except:
+                return
+        if dm_channel is None and user:
+            try:
+                dm_channel = await user.create_dm()
+            except:
+                return
+
+        if dm_channel:
+            await dm_channel.send("❌ Sua solicitação para realizar a prova foi **negada** pela liderança.")
 
 # --- CLASSE PRINCIPAL DA COG ---
 
@@ -121,7 +193,32 @@ class SistemaProva(commands.Cog):
         self.cooldowns = {} 
         self.questoes_data = {} 
         self.last_error = None
-        self.pending_approvals = {}
+        self._restaurar_aprovacoes_pendentes()
+
+    def _restaurar_aprovacoes_pendentes(self):
+        try:
+            dados_pendentes = listar_aprovacoes_pendentes()
+            for dados in dados_pendentes:
+                user_id = dados["user_id"]
+                status = dados.get("status", "aguardando_dono")
+                questoes = dados.get("questoes")
+                config = dados.get("config")
+
+                if status == "aguardando_usuario":
+                    view = IntroView(cog=self, user_id=user_id, questoes=questoes, config=config)
+                    self.client.add_view(view)
+                    print(f"SistemaProva: IntroView restaurada para user {user_id}")
+                else:
+                    view = OwnerApprovalView(
+                        cog=self,
+                        user_id=user_id,
+                        questoes=questoes,
+                        config=config
+                    )
+                    self.client.add_view(view)
+                    print(f"SistemaProva: OwnerApprovalView restaurada para user {user_id}")
+        except Exception as e:
+            print(f"SistemaProva: Erro ao restaurar aprovações pendentes: {e}")
 
     async def carregar_provas(self):
         self.last_error = None
@@ -247,16 +344,16 @@ class SistemaProva(commands.Cog):
 
                 view_aprovar = OwnerApprovalView(self, user_id, interaction.user, dm_channel, questoes_selecionadas, config)
                 await owner.send(embed=embed_owner, view=view_aprovar)
+                salvar_aprovacao_pendente(user_id, str(interaction.user), questoes_selecionadas, config)
                 await interaction.response.send_message("📩 Sua solicitação foi enviada para a liderança aprovar. **Aguarde o contato no privado!**", ephemeral=True)
                 return
 
         # 5. Se não tem OWNER_ID configurado, inicia direto
+        salvar_aprovacao_pendente(user_id, str(interaction.user), questoes_selecionadas, config, status="aguardando_usuario")
         await self._run_exam(dm_channel, interaction.user, user_id, questoes_selecionadas, config)
 
     async def _run_exam(self, dm_channel, user, user_id, questoes_selecionadas, config):
-        """Executa o fluxo completo da prova (chamado após aprovação ou diretamente)."""
-
-        # --- INTRODUÇÃO / TUTORIAL ---
+        """Envia o embed introdutório e aguarda o usuário iniciar a prova."""
         embed_intro = discord.Embed(
             title="🛡️ Exame de Qualificação: Co-Líder B.A.D",
             description=f"Olá, {user.mention}! Bem-vindo ao exame para **Co-Líder** do clã **B.A.D**.\n\n"
@@ -269,12 +366,18 @@ class SistemaProva(commands.Cog):
         embed_intro.add_field(name="🔒 Sigilo", value="Cada pergunta é **apagada** após respondida para evitar cola.", inline=False)
         embed_intro.add_field(name="📊 Conteúdo", value="• **Filosofia e Conduta** (Promoções, Hierarquia)\n• **Protocolos de Guerra** (Guerras, CWL)\n• **Gestão do Clã** (Doações, Eventos)\n• **Códigos MR** (Penalidades)", inline=False)
 
-        view_intro = IntroView()
+        atualizar_status_aprovacao(user_id, "aguardando_usuario")
+
+        view_intro = IntroView(self, user_id, questoes_selecionadas, config)
         await dm_channel.send(embed=embed_intro, view=view_intro)
 
-        if await view_intro.wait() or not view_intro.confirmado:
+        await view_intro.wait()
+        if not view_intro.confirmado:
+            deletar_aprovacao_pendente(user_id)
             return
 
+    async def _run_exam_loop(self, dm_channel, user, user_id, questoes_selecionadas, config):
+        """Executa o loop de questões da prova."""
         acertos = 0
         respostas_detalhadas = []
 

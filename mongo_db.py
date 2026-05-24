@@ -135,6 +135,68 @@ def deletar_ticket(user_id, data):
         print(f"Erro ao deletar ticket: {e}")
         return False
 
+def salvar_aprovacao_pendente(user_id, user_name, questoes, config, status="aguardando_dono"):
+    _garantir_conexao()
+    if db is None:
+        print("MongoDB: Não foi possível salvar aprovação pendente (sem conexão)")
+        return False
+    try:
+        db.pending_approvals.update_one(
+            {"user_id": str(user_id)},
+            {"$set": {
+                "user_id": str(user_id),
+                "user_name": user_name,
+                "questoes": questoes,
+                "config": config,
+                "status": status,
+                "data_solicitacao": datetime.now().isoformat()
+            }},
+            upsert=True
+        )
+        print(f"MongoDB: Aprovação pendente salva para user {user_id} ({status})")
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar aprovação pendente: {e}")
+        return False
+
+def get_aprovacao_pendente(user_id):
+    _garantir_conexao()
+    if db is None: return None
+    try:
+        return db.pending_approvals.find_one({"user_id": str(user_id)}, {"_id": 0})
+    except Exception as e:
+        print(f"Erro ao buscar aprovação pendente: {e}")
+        return None
+
+def deletar_aprovacao_pendente(user_id):
+    _garantir_conexao()
+    if db is None: return
+    try:
+        db.pending_approvals.delete_one({"user_id": str(user_id)})
+        print(f"MongoDB: Aprovação pendente removida para user {user_id}")
+    except Exception as e:
+        print(f"Erro ao deletar aprovação pendente: {e}")
+
+def atualizar_status_aprovacao(user_id, status):
+    _garantir_conexao()
+    if db is None: return
+    try:
+        db.pending_approvals.update_one(
+            {"user_id": str(user_id)},
+            {"$set": {"status": status}}
+        )
+    except Exception as e:
+        print(f"Erro ao atualizar status de aprovação: {e}")
+
+def listar_aprovacoes_pendentes():
+    _garantir_conexao()
+    if db is None: return []
+    try:
+        return list(db.pending_approvals.find({}, {"_id": 0}))
+    except Exception as e:
+        print(f"Erro ao listar aprovações pendentes: {e}")
+        return []
+
 def stats_dashboard():
     if db is None: return {"total_provas": 0, "aprovados": 0, "reprovados": 0, "total_tickets": 0}
     try:
