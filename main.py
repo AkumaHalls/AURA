@@ -94,9 +94,9 @@ class Client(commands.Bot):
         self.start_time = time.time()
         self.status_index = 0
 
-        # Primeira atualizacao de status imediatamente
-        await self._update_status()
-        self.status_rotation.start()
+        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Inicializando..."))
+
+        self.loop.create_task(self._iniciar_rotacao_apos_espera())
 
         if not self.synced:
             cmds = [c.name for c in self.tree.get_commands()]
@@ -107,6 +107,11 @@ class Client(commands.Bot):
             print(f"Comandos sincronizados: {self.synced}")
         print(f"\nO bot {self.user} já está online e disponível.")
         print(f"\nID do dono é {donoid}")
+
+    async def _iniciar_rotacao_apos_espera(self):
+        await asyncio.sleep(120)
+        await self._update_status()
+        self.status_rotation.start()
 
     async def _update_status(self):
         total_users = sum(g.member_count or 0 for g in self.guilds)
