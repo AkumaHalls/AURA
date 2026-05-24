@@ -109,7 +109,7 @@ class Client(commands.Bot):
         print(f"\nID do dono é {donoid}")
 
     async def _iniciar_rotacao_apos_espera(self):
-        await asyncio.sleep(120)
+        await asyncio.sleep(60)
         await self._update_status()
         self.status_rotation.start()
 
