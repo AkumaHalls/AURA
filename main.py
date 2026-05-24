@@ -2,8 +2,9 @@
 import discord
 import os
 import asyncio
+import time
 from os import listdir
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord.errors import LoginFailure
 from dotenv import load_dotenv
 
@@ -54,8 +55,9 @@ class Client(commands.Bot):
         # Carrega as extensões (cogs) registradas
         for ext in self.cogslist:
             await self.load_extension(ext)
-        # Inicia background task que escuta sinal de sync vindo do web panel
+        # Inicia background tasks
         self.loop.create_task(self._sync_signal_listener())
+        self.status_rotation.start()
 
     async def _sync_signal_listener(self):
         await self.wait_until_ready()
@@ -89,20 +91,46 @@ class Client(commands.Bot):
         print("Sync global concluído.")
 
     async def on_ready(self):
-        # Executa ações quando o bot estiver pronto
         await self.wait_until_ready()
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Bem vindo"))  # Define o status do bot
+        self.start_time = time.time()
+        self.status_index = 0
+
+        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Inicializando..."))
+
         if not self.synced:
-            # Lista comandos registrados para debug
             cmds = [c.name for c in self.tree.get_commands()]
             print(f"Comandos registrados no tree: {cmds}")
-            # Sincroniza globalmente (ate 1h propagar)
             await self.tree.sync()
             print("Comandos sincronizados globalmente.")
             self.synced = True
             print(f"Comandos sincronizados: {self.synced}")
         print(f"\nO bot {self.user} já está online e disponível.")
         print(f"\nID do dono é {donoid}")
+
+    @tasks.loop(minutes=3)
+    async def status_rotation(self):
+        if not hasattr(self, 'start_time'):
+            return
+
+        total_users = sum(g.member_count or 0 for g in self.guilds)
+        total_cogs = len(self.cogs)
+        total_cmds = len(self.tree.get_commands())
+        ping = round(self.latency * 1000)
+        uptime_seconds = int(time.time() - self.start_time)
+        uptime_str = f"{uptime_seconds // 3600}h {(uptime_seconds % 3600) // 60}m"
+
+        activities = [
+            discord.Activity(type=discord.ActivityType.watching, name=f"Operational Cluster • {len(self.guilds)} servidores"),
+            discord.Activity(type=discord.ActivityType.watching, name=f"Latência: {ping}ms • {total_cogs} módulos"),
+            discord.Activity(type=discord.ActivityType.playing, name=f"B.A.D • {total_users} membros"),
+            discord.Activity(type=discord.ActivityType.listening, name=f"{total_cmds} comandos • Uptime: {uptime_str}"),
+            discord.Activity(type=discord.ActivityType.watching, name=f"Sistema Online • v2.0"),
+            discord.Activity(type=discord.ActivityType.competing, name=f"Gerenciando {len(self.guilds)} clãs"),
+        ]
+
+        activity = activities[self.status_index % len(activities)]
+        self.status_index += 1
+        await self.change_presence(activity=activity)
 
 # Inicializa o cliente
 client = Client()
