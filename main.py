@@ -57,7 +57,6 @@ class Client(commands.Bot):
             await self.load_extension(ext)
         # Inicia background tasks
         self.loop.create_task(self._sync_signal_listener())
-        self.status_rotation.start()
 
     async def _sync_signal_listener(self):
         await self.wait_until_ready()
@@ -95,7 +94,9 @@ class Client(commands.Bot):
         self.start_time = time.time()
         self.status_index = 0
 
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Inicializando..."))
+        # Primeira atualizacao de status imediatamente
+        await self._update_status()
+        self.status_rotation.start()
 
         if not self.synced:
             cmds = [c.name for c in self.tree.get_commands()]
@@ -107,11 +108,7 @@ class Client(commands.Bot):
         print(f"\nO bot {self.user} já está online e disponível.")
         print(f"\nID do dono é {donoid}")
 
-    @tasks.loop(minutes=3)
-    async def status_rotation(self):
-        if not hasattr(self, 'start_time'):
-            return
-
+    async def _update_status(self):
         total_users = sum(g.member_count or 0 for g in self.guilds)
         total_cogs = len(self.cogs)
         total_cmds = len(self.tree.get_commands())
@@ -131,6 +128,10 @@ class Client(commands.Bot):
         activity = activities[self.status_index % len(activities)]
         self.status_index += 1
         await self.change_presence(activity=activity)
+
+    @tasks.loop(minutes=1)
+    async def status_rotation(self):
+        await self._update_status()
 
 # Inicializa o cliente
 client = Client()
