@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# o compose lê secrets.env; precisa ficar fora do git
+secrets.env
+secrets.env.*
 *.key
 *.pem
 
