@@ -260,15 +260,33 @@ def health():
 # Helpers de servidor
 # --------------------------------------------------------------------------
 
+def _config_do_servidor(guild_id) -> Optional[Dict[str, Any]]:
+    """
+    Lê a config de um servidor, indo ao MongoDB quando o cache está frio.
+
+    Não dá para confiar só no cache: `_salvar_cfg` invalida o cache a cada
+    gravação, então logo depois de salvar a config sumia da memória. A página
+    seguinte caía em `default_config` e mostrava um formulário em branco; o
+    salvão seguinte gravava esse default por cima da config de verdade, levando
+    perfil, owner_ids, módulos e todo o resto do servidor.
+    """
+    try:
+        cfg = st.get_cached(guild_id)
+    except Exception:
+        cfg = None
+    if cfg is not None:
+        return cfg
+    try:
+        return runtime.run_coro(st.get_config_cached(guild_id, force=True))
+    except Exception:
+        return None
+
+
 def _servidores() -> List[Dict[str, Any]]:
     """Servidores do bot, com a config e o resumo prontos."""
     lista = []
     for guild in runtime.list_guild_summaries():
-        try:
-            cfg = st.get_cached(guild["id"])
-        except Exception:
-            cfg = None
-        lista.append({"guild": guild, "cfg": cfg})
+        lista.append({"guild": guild, "cfg": _config_do_servidor(guild["id"])})
     return lista
 
 
@@ -442,11 +460,18 @@ def salvar_basico(chave: str):
         cfg["profile"] = request.form.get("profile", cfg.get("profile", "generico"))
         cfg["prefix"] = request.form.get("prefix", cfg.get("prefix", "-br"))[:16]
         cfg["locale"] = request.form.get("locale", cfg.get("locale", "pt-BR"))[:16]
-        cfg["owner_ids"] = _pedir_lista("owner_ids")
+        # Só mexe nos donos se o campo veio no formulário. Sem esse teste, um
+        # POST que não manda o campo apagava a lista de donos do servidor.
+        if "owner_ids" in request.form or "owner_ids_texto" in request.form:
+            cfg["owner_ids"] = _pedir_lista("owner_ids")
 
     # Os interruptores de módulo ficam no mesmo formulário da página geral,
     # então são lidos sempre que vierem — tanto em "geral" quanto em "modulos".
-    if any(f"mod_{mod['key']}" in request.form for mod in MODULOS_PAINEL):
+    # O `modulos_form` é o campo que diz "este formulário traz os interruptores":
+    # checkbox desmarcado não é enviado pelo navegador, então sem o marcador não
+    # dava para desligar todos os módulos de uma vez.
+    if request.form.get("modulos_form") or any(
+            f"mod_{mod['key']}" in request.form for mod in MODULOS_PAINEL):
         for mod in MODULOS_PAINEL:
             cfg["modules"][mod["key"]] = _pedir_bool(
                 f"mod_{mod['key']}", bool(cfg["modules"].get(mod["key"])))

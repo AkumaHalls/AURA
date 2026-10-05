@@ -18,6 +18,7 @@ TESTES = [
     ("views persistentes", "test_views_persistentes.py"),
     ("variaveis de ambiente", "test_env_vars.py"),
     ("gravacao de config", "test_db_write.py"),
+    ("painel nao perde config", "test_painel_config.py"),
     ("moderacao", "test_moderacao.py"),
     ("painel", "test_painel.py"),
     ("painel post", "test_painel_post.py"),
