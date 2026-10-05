@@ -92,6 +92,8 @@ def _numeros(clan: Any) -> Dict[str, str]:
 class StatusCla(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
+        #: motivo ja avisado por servidor, para nao repetir o mesmo AVISO.
+        self._avisado: Dict[int, Optional[str]] = {}
 
     async def cog_unload(self):
         await _fechar()
@@ -199,10 +201,27 @@ class StatusCla(commands.Cog):
             try:
                 cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
                 resultado = await self._atualizar_um(guild, cfg)
-                if resultado and "atualizado" not in resultado:
-                    runtime.log("AVISO", f"StatusCla em {guild.name}: {resultado}", "clash")
+                self._avisar(guild, resultado)
             except Exception as exc:
                 runtime.log("ERRO", f"StatusCla falhou em {guild.name}: {exc}", "clash")
+
+    def _avisar(self, guild: discord.Guild, resultado: Optional[str]) -> None:
+        """
+        Fala uma vez por motivo.
+
+        Sem isso o módulo desligado era 100% silencioso — `_atualizar_um`
+        devolve None e o log era pulado — então "parou de atualizar" não deixava
+        rastro nenhum. Repete só quando o motivo muda, para o loop de 10
+        minutos não virar spam.
+        """
+        if resultado and "atualizado" in resultado:
+            self._avisado.pop(guild.id, None)
+            return
+        if self._avisado.get(guild.id) == resultado:
+            return
+        self._avisado[guild.id] = resultado
+        runtime.log("AVISO", f"StatusCla parado em {guild.name}: "
+                             f"{resultado or 'módulo desligado'}", "clash")
 
     @update_status.before_loop
     async def _antes(self):

@@ -3,53 +3,27 @@
 # Subir com:  docker compose up -d --build
 # O painel fica em http://SEU_IP:2501
 #
-# O `.env` é lido pelo Compose para preencher as variáveis abaixo. Ele NÃO é
-# copiado para dentro da imagem.
+# O banco NÃO é um serviço deste arquivo: `secrets.env` traz a MONGO_URI
+# apontando para o Mongo que você já tem (em outro stack, ou gerenciado).
+# Isso mantém o bot independente do banco, que é o que a VPS usa hoje.
+#
+# `secrets.env` NÃO é versionado. Ele é lido pelo Compose para preencher as
+# variáveis abaixo e NÃO é copiado para dentro da imagem.
 
 services:
   bot:
     build: .
+    image: aura-bot-bot:latest
     container_name: aura-bot
     restart: unless-stopped
     ports:
       # 127.0.0.1 = painel só acessível por SSH/Proxy.
-      # Troque para "2501:2501" se quiser expor direto e usar HTTPS por proxy.
-      - "127.0.0.1:2501:2501"
+      # Troque para "2501:2501" se quiser expor direto, como a VPS expõe.
+      - "0.0.0.0:2501:2501"
     env_file:
-      - .env
+      - secrets.env
     environment:
       TZ: America/Sao_Paulo
       WEB_PANEL_HOST: 0.0.0.0
       WEB_PANEL_PORT: "2501"
       MONGO_DB_NAME: ${MONGO_DB_NAME:-aura_bot}
-      # Bancos de perguntas por servidor num volume, não na imagem.
-      AURA_DATA_DIR: /app/dados
-    volumes:
-      - aura-dados:/app/dados
-    depends_on:
-      mongo:
-        condition: service_healthy
-
-  mongo:
-    image: mongo:7
-    container_name: aura-mongo
-    restart: unless-stopped
-    command: ["mongod", "--bind_ip_all"]
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-aura}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?defina MONGO_PASSWORD no .env}
-    volumes:
-      - mongo-dados:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-    # Sem porta publicada de propósito: o Mongo só é acessado pela rede interna
-    # do Compose. Se precisar acessar de fora, exponha atrás de autenticação e
-    # TLS — nunca um Mongo público sem senha.
-
-volumes:
-  aura-dados:
-  mongo-dados:

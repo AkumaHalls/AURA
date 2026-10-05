@@ -353,6 +353,43 @@ def salvar_transcricao(ticket_id, transcript: str, atendente: str = None,
         return False
 
 
+def _filtro_guild(guild_id) -> Optional[Dict[str, Any]]:
+    """
+    Condição de servidor que também enxerga o registro gravado antes do
+    multiserver.
+
+    Antes de existir config por servidor, provas, tickets, infrações e modlog
+    eram salvos sem `guild_id`. Filtrar só por `guild_id: <id>` escondia todo
+    esse histórico: o painel mostrava "nenhuma tentativa registrada" com a
+    prova happily salva no banco. Documento sem `guild_id` é de um servidor só,
+    então entra junto.
+    """
+    if not guild_id:
+        return None
+    return {
+        "$or": [
+            {"guild_id": str(guild_id)},
+            {"guild_id": None},
+            {"guild_id": {"$exists": False}},
+        ]
+    }
+
+
+def _com_filtro_guild(q: Dict[str, Any], guild_id) -> Dict[str, Any]:
+    """
+    Junta a condição de servidor ao filtro `q`.
+
+    Usa `$and` porque a busca por texto também monta um `$or`: dois `$or` no
+    mesmo documento sobrescrevem o anterior e um dos filtros sumiria.
+    """
+    guild = _filtro_guild(guild_id)
+    if not guild:
+        return q
+    if not q:
+        return guild
+    return {"$and": [q, guild]}
+
+
 def listar_tickets(
     guild_id=None,
     status: str = None,
@@ -365,8 +402,6 @@ def listar_tickets(
     if not _garantir_conexao() or db is None:
         return []
     q: Dict[str, Any] = {}
-    if guild_id:
-        q["guild_id"] = str(guild_id)
     if status and status != "todos":
         q["status"] = status
     if tipo and tipo != "todos":
@@ -374,6 +409,7 @@ def listar_tickets(
     if busca:
         rx = {"$regex": str(busca).strip()[:60], "$options": "i"}
         q["$or"] = [{"user_name": rx}, {"user_id": rx}, {"tipo": rx}, {"atendente": rx}]
+    q = _com_filtro_guild(q, guild_id)
     try:
         cur = db.tickets.find(q, {"_id": 1, "transcript": 0}).sort(
             "ts", DESCENDING if sort_desc else ASCENDING
@@ -392,7 +428,7 @@ def contar_tickets(guild_id=None, status: str = None) -> Dict[str, int]:
     out = {"aberto": 0, "atendendo": 0, "fechado": 0, "total": 0}
     if not _garantir_conexao() or db is None:
         return out
-    base: Dict[str, Any] = {"guild_id": str(guild_id)} if guild_id else {}
+    base: Dict[str, Any] = _filtro_guild(guild_id) or {}
     try:
         for st in ("aberto", "atendendo", "fechado"):
             out[st] = db.tickets.count_documents({**base, "status": st})
@@ -517,8 +553,6 @@ def listar_provas(guild_id=None, resultado: str = None, busca: str = None,
     if not _garantir_conexao() or db is None:
         return []
     q: Dict[str, Any] = {}
-    if guild_id:
-        q["guild_id"] = str(guild_id)
     if resultado == "aprovado":
         q["passed"] = True
     elif resultado == "reprovado":
@@ -526,6 +560,7 @@ def listar_provas(guild_id=None, resultado: str = None, busca: str = None,
     if busca:
         rx = {"$regex": str(busca).strip()[:60], "$options": "i"}
         q["$or"] = [{"user_name": rx}, {"user_id": rx}]
+    q = _com_filtro_guild(q, guild_id)
     try:
         return list(db.provas.find(q, {"_id": 1, "respostas": 0})
                     .sort("ts", DESCENDING).skip(max(0, offset)).limit(max(1, min(1000, limite))))
@@ -558,7 +593,7 @@ def stats_provas(guild_id=None) -> Dict[str, Any]:
     out = {"total": 0, "aprovados": 0, "reprovados": 0, "taxa": 0.0, "media": 0.0}
     if not _garantir_conexao() or db is None:
         return out
-    base: Dict[str, Any] = {"guild_id": str(guild_id)} if guild_id else {}
+    base: Dict[str, Any] = _filtro_guild(guild_id) or {}
     try:
         out["total"] = db.provas.count_documents(base)
         out["aprovados"] = db.provas.count_documents({**base, "passed": True})
@@ -758,13 +793,12 @@ def listar_infracoes(guild_id=None, user_id: str = None, busca: str = None,
     if not _garantir_conexao() or db is None:
         return []
     q: Dict[str, Any] = {}
-    if guild_id:
-        q["guild_id"] = str(guild_id)
     if user_id:
         q["user_id"] = str(user_id)
     if busca:
         rx = {"$regex": str(busca).strip()[:60], "$options": "i"}
         q["$or"] = [{"user_name": rx}, {"user_id": rx}, {"motivo": rx}]
+    q = _com_filtro_guild(q, guild_id)
     try:
         cur = db.infractions.find(q).sort("ts", DESCENDING).skip(max(0, offset)).limit(
             max(1, min(1000, limite)))
@@ -790,8 +824,9 @@ def top_infratores(guild_id=None, limite: int = 10, dias: int = 30) -> List[Dict
     if not _garantir_conexao() or db is None:
         return []
     match: Dict[str, Any] = {"ts": {"$gte": time.time() - dias * 86400}}
-    if guild_id:
-        match["guild_id"] = str(guild_id)
+    guild = _filtro_guild(guild_id)
+    if guild:
+        match = {"$and": [match, guild]}
     try:
         return list(
             db.infractions.aggregate([
@@ -865,13 +900,12 @@ def listar_modlog(guild_id=None, acao: str = None, busca: str = None,
     if not _garantir_conexao() or db is None:
         return []
     q: Dict[str, Any] = {}
-    if guild_id:
-        q["guild_id"] = str(guild_id)
     if acao and acao != "todos":
         q["acao"] = acao
     if busca:
         rx = {"$regex": str(busca).strip()[:60], "$options": "i"}
         q["$or"] = [{"alvo": rx}, {"alvo_id": rx}, {"motivo": rx}, {"mod_name": rx}]
+    q = _com_filtro_guild(q, guild_id)
     try:
         cur = db.modlog.find(q).sort("ts", DESCENDING).skip(max(0, offset)).limit(
             max(1, min(1000, limite)))
