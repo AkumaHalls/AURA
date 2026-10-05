@@ -173,16 +173,30 @@ def get_guild_config_raw(guild_id) -> Optional[Dict[str, Any]]:
 
 
 def upsert_guild_config(guild_id, doc: Dict[str, Any], updated_by: str = None) -> bool:
+    """
+    Grava a config do servidor, criando o documento se ainda não existir.
+
+    `created_at` não pode estar no `$set` e no `$setOnInsert` ao mesmo tempo:
+    o Mongo responde "Updating the path 'created_at' would create a conflict" e
+    recusa a gravação inteira — inclusive a da migração do `.env`. Vai só no
+    `$set`; o `$setOnInsert` fica para os campos que o painel não envia.
+    """
     if not _garantir_conexao() or db is None:
         return False
     doc = dict(doc)
     doc["guild_id"] = str(guild_id)
     doc["updated_at"] = time.time()
     doc["updated_by"] = updated_by
+    doc.setdefault("created_at", time.time())
+    apenas_no_insert = {"created_at": doc["created_at"]}
+    # Tira do $set o que já está no $setOnInsert: os dois no mesmo update
+    # significa conflito.
+    for chave in apenas_no_insert:
+        doc.pop(chave, None)
     try:
         db.guild_configs.update_one(
             {"guild_id": str(guild_id)},
-            {"$set": doc, "$setOnInsert": {"created_at": time.time()}},
+            {"$set": doc, "$setOnInsert": apenas_no_insert},
             upsert=True,
         )
         return True
