@@ -1,168 +1,275 @@
-import discord
+"""
+AURA · Status do clã
+-------------------
+Renomeia os canais de voz de status do clã com os dados do Clash of Clans,
+configurados POR SERVIDOR no painel web.
+
+    /status-cla configurar   escolhe a categoria e os canais
+    /status-cla forcar       atualiza agora
+    /status-cla ver          mostra o que está configurado
+
+Cada canal é mapeado pelo emoji do nome. Aceita os mesmos emojis de sempre,
+mas qualquer um pode ser configurado pelo painel.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import os
-import coc
-import traceback
-from datetime import datetime
-import pytz
-from discord.ext import commands, tasks
-from discord import app_commands
-from dotenv import load_dotenv
+from typing import Any, Dict, List, Optional, Tuple
 
-# Carrega variáveis
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+
+from core import runtime
+from core import settings as st
 
 COC_EMAIL = os.getenv("COC_EMAIL")
 COC_PASSWORD = os.getenv("COC_PASSWORD")
-CLAN_TAG = os.getenv("CLAN_TAG")
+
+#: Emoji do canal -> chave do dado que ele mostra.
+EMOJIS_PADRAO = {
+    "👥": "membros",
+    "⭐": "estrelas",
+    "🏆": "trofeus",
+    "⚔️": "vitorias_guerra",
+    "🔥": "streak",
+    "🕒": "tempo",
+}
+
+_client = None
+
+
+async def _coc():
+    global _client
+    if _client is not None:
+        return _client
+    if not (COC_EMAIL and COOC_PASSWORD):
+        return None
+    try:
+        from coc import Client as CocClient
+    except ImportError:
+        return None
+    _client = CocClient(email=COC_EMAIL, password=COC_PASSWORD)
+    try:
+        await _client.login()
+    except Exception as exc:
+        runtime.log("ERRO", f"StatusCla: login falhou: {exc}", "clash")
+        _client = None
+    return _client
+
+
+async def _fechar():
+    global _client
+    if _client is not None:
+        try:
+            await _client.logout()
+        except Exception:
+            pass
+        _client = None
+
+
+def _numeros(clan: Any) -> Dict[str, str]:
+    """Extrai os números do clã, tolerando campos ausentes na API."""
+    def get(*nomes, padrao="?"):
+        for n in nomes:
+            v = getattr(clan, n, None)
+            if v is not None:
+                return v
+        return padrao
+
+    return {
+        "membros": str(get("members", "member_count", padrao=0)),
+        "estrelas": str(get("stars")),
+        "trofeus": str(get("trophies")),
+        "vitorias_guerra": str(get("war_wins")),
+        "streak": str(get("war_streak")),
+        "tempo": str(get("last_join_date", "last_seen", padrao="—")),
+    }
+
 
 class StatusCla(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
-        self.coc_client = None
-        # Agora não guardamos IDs fixos globais, pois pode ter mais de um servidor
-        self.update_status_task.start()
 
-    async def connect_coc(self):
+    async def cog_unload(self):
+        await _fechar()
+        if self.update_status.is_running():
+            self.update_status.cancel()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if not (COC_EMAIL and COOC_PASSWORD):
+            runtime.log("AVISO", "StatusCla: sem credenciais, inativo", "clash")
+            return
+        if not self.update_status.is_running():
+            self.update_status.start()
+
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _achar_canais(guild: discord.Guild, categoria_id: int) -> Dict[str, discord.VoiceChannel]:
+        """Mapeia os canais da categoria por emoji, com fallback por nome."""
+        categoria = guild.get_channel(categoria_id) if categoria_id else None
+        canais = categoria.voice_channels if categoria is not None else \
+            [c for c in guild.voice_channels]
+
+        mapa: Dict[str, discord.VoiceChannel] = {}
+        for ch in canais:
+            nome = ch.name or ""
+            for emoji, chave in EMOJIS_PADRAO.items():
+                if chave in mapa:
+                    continue
+                if emoji in nome:
+                    mapa[chave] = ch
+                    break
+
+        if len(mapa) < 3:
+            # Sem emojis: tenta achar por palavra no nome.
+            for ch in canais:
+                nome = (ch.name or "").lower()
+                for chave in ("membros", "member", "people"):
+                    if chave in nome and "membros" not in mapa:
+                        mapa["membros"] = ch
+                for chave in ("estrela", "star"):
+                    if chave in nome and "estrelas" not in mapa:
+                        mapa["estrelas"] = ch
+                for chave in ("trofeu", "troph"):
+                    if chave in nome and "trofeus" not in mapa:
+                        mapa["trofeus"] = ch
+        return mapa
+
+    async def _atualizar_um(self, guild: discord.Guild, cfg: Dict[str, Any]) -> Optional[str]:
+        games = cfg.get("games") or {}
+        if not games.get("coc", {}).get("enabled"):
+            return None
+        coc = games["coc"]
+        tag = coc.get("clan_tag")
+        if not tag:
+            return "sem tag de clã"
+
+        canais = coc.get("status_channel_ids") or {}
+        if not canais:
+            return "sem canais de status mapeados"
+
+        api = await _coc()
+        if api is None:
+            return "sem credenciais da API do .env"
+
         try:
-            if self.coc_client and self.coc_client.http.session:
-                 return 
-            self.coc_client = coc.Client(key_count=1, key_names="StatusBotKey", throttle_limit=20)
-            await self.coc_client.login(COC_EMAIL, COC_PASSWORD)
-            print("StatusCla: Conectado ao CoC API.")
-        except Exception as e:
-            print(f"StatusCla: Erro login CoC: {e}")
-            self.coc_client = None
+            clan = await api.get_clan(tag)
+        except Exception as exc:
+            return f"API do Clash: {exc}"
 
-    def cog_unload(self):
-        self.update_status_task.cancel()
-        if self.coc_client:
-            asyncio.create_task(self.coc_client.close())
+        dados = _numeros(clan)
+        atualizados = 0
+        for chave, canal_id in canais.items():
+            canal = guild.get_channel(canal_id)
+            if canal is None or not isinstance(canal, discord.VoiceChannel):
+                continue
+            valor = dados.get(chave, "?")
+            nome_novo = canal.name.split(" ", 1)[-1] if " " in canal.name else canal.name
+            # Preserva o emoji/nome original e troca só o valor.
+            partes = (canal.name or "").split(" ")
+            prefixo = partes[0] if len(partes) > 1 else chave
+            novo = f"{prefixo} {valor}"
+            if novo != canal.name and len(novo) <= 100:
+                try:
+                    await canal.edit(name=novo, reason=f"AURA status {tag}")
+                    atualizados += 1
+                except discord.Forbidden:
+                    pass
 
-    async def find_channels_in_guild(self, guild):
-        """
-        Procura a categoria e os canais DENTRO de um servidor específico.
-        Retorna: (Sucesso: bool, Mensagem/Dados)
-        """
-        category = None
-        
-        # 1. Procura categoria pelo NOME (Flexível)
-        for cat in guild.categories:
-            nome = cat.name.lower()
-            # Procura "status" E "clã" (ou "cla")
-            if "status" in nome and ("clã" in nome or "cla" in nome):
-                category = cat
-                break
-        
-        if not category:
-            return False, f"Categoria 'Status do Clã' não encontrada no servidor '{guild.name}'."
-
-        # 2. Mapeamento de Emojis
-        emoji_map = {
-            "👥": "membros",
-            "⭐": "nivel",
-            "🏆": "trofeus",
-            "⚔️": "guerras",
-            "🔥": "streak",
-            "🕒": "data"
-        }
-
-        found_channels = {}
-        
-        # 3. Procura canais dentro da categoria
-        # Tenta pegar voice_channels, se não tiver, pega channels geral
-        canais_para_checar = category.voice_channels if hasattr(category, 'voice_channels') else category.channels
-
-        for channel in canais_para_checar:
-            for emoji, key in emoji_map.items():
-                if emoji in channel.name:
-                    found_channels[key] = channel
-        
-        # Se achou pelo menos 3 canais, considera válido
-        if len(found_channels) >= 3:
-            return True, found_channels
-        
-        return False, f"Categoria '{category.name}' encontrada, mas não achei os canais com emojis (👥, ⭐, etc)."
-
-    async def update_guild_status(self, guild, found_channels):
-        """Executa a atualização para um servidor específico."""
         try:
-            # Garante conexão CoC
-            await self.connect_coc()
-            if not self.coc_client: return "Falha conexão CoC"
+            import mongo_db
+            mongo_db.registrar_auditoria(
+                guild.id, guild.name, "status_cla_atualizado", "games", None,
+                f"{atualizados} canais de {tag}")
+        except Exception:
+            pass
 
-            clan = await self.coc_client.get_clan(CLAN_TAG)
-            
-            tz = pytz.timezone('America/Sao_Paulo')
-            horario = datetime.now(tz).strftime("%d/%m %H:%M")
+        return f"{atualizados} canal(is) atualizado(s)" if atualizados else \
+            "nada mudou (os canais já estavam certos)"
 
-            stats = {
-                "membros": f"👥 Membros: {clan.member_count}/50",
-                "nivel": f"⭐ Nível: {clan.level}",
-                "trofeus": f"🏆 Troféus: {clan.points}",
-                "guerras": f"⚔️ Guerras Ganhas: {clan.war_wins}",
-                "streak": f"🔥 Win Streak: {clan.war_win_streak}",
-                "data": f"🕒 Atualizado: {horario}"
-            }
-
-            count = 0
-            for key, channel in found_channels.items():
-                new_name = stats.get(key)
-                if new_name and channel.name != new_name:
-                    await channel.edit(name=new_name)
-                    count += 1
-                    await asyncio.sleep(1.5) # Evita rate limit
-            
-            return f"Atualizado ({count} canais) em '{guild.name}'."
-
-        except Exception as e:
-            traceback.print_exc()
-            return f"Erro em '{guild.name}': {e}"
-
-    # --- TAREFA AUTOMÁTICA ---
     @tasks.loop(minutes=10)
-    async def update_status_task(self):
-        # Itera sobre TODOS os servidores que o bot está
-        for guild in self.client.guilds:
-            success, result = await self.find_channels_in_guild(guild)
-            if success:
-                # Se achou a categoria neste servidor, atualiza
-                await self.update_guild_status(guild, result)
-            # Se não achou, ignora (provavelmente é o outro servidor que não tem status)
-
-    @update_status_task.before_loop
-    async def before_update(self):
+    async def update_status(self):
         await self.client.wait_until_ready()
+        for guild in self.client.guilds:
+            try:
+                cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+                resultado = await self._atualizar_um(guild, cfg)
+                if resultado and "atualizado" not in resultado:
+                    runtime.log("AVISO", f"StatusCla em {guild.name}: {resultado}", "clash")
+            except Exception as exc:
+                runtime.log("ERRO", f"StatusCla falhou em {guild.name}: {exc}", "clash")
 
-    # --- COMANDOS ---
-    @app_commands.command(name="setup-status", description="[Admin] Cria o painel de status.")
-    @commands.has_permissions(administrator=True)
-    async def setup_status(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        # ... Lógica de criação omitida para focar no fix, mas o comando existe ...
-        await interaction.followup.send("⚠️ Use `/force-update` para conectar o painel.", ephemeral=True)
+    @update_status.before_loop
+    async def _antes(self):
+        await self.client.wait_until_ready()
+        await asyncio.sleep(45)
 
-    @app_commands.command(name="force-update", description="[Admin] Força atualização NESTE servidor.")
-    @commands.has_permissions(administrator=True)
-    async def force_update(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
-        # 1. Procura SOMENTE no servidor onde o comando foi digitado
+    # ------------------------------------------------------------------
+    # Comandos
+    # ------------------------------------------------------------------
+
+    grupo = app_commands.Group(name="status-cla", description="Status do clã (canais de voz).")
+
+    @grupo.command(name="forcar", description="Atualiza os canais de status agora.")
+    @commands.guild_only()
+    @commands.has_permissions(manage_channels=True)
+    async def forcar(self, interaction: discord.Interaction):
         guild = interaction.guild
-        success, result = await self.find_channels_in_guild(guild)
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        await interaction.response.defer(ephemeral=True)
+        resultado = await self._atualizar_um(guild, cfg)
+        await interaction.followup.send(
+            f"✅ {resultado}" if resultado and "atualizado" in resultado
+            else f"⚠️ {resultado or 'módulo desligado aqui'}", ephemeral=True)
 
-        if success:
-            found_channels = result
-            # 2. Atualiza
-            msg_update = await self.update_guild_status(guild, found_channels)
-            
-            embed = discord.Embed(title="✅ Sucesso", description=msg_update, color=discord.Color.green())
-            await interaction.followup.send(embed=embed, ephemeral=True)
-        else:
-            # Mostra o erro específico deste servidor
-            embed = discord.Embed(title="❌ Erro", description=result, color=discord.Color.red())
-            embed.set_footer(text=f"Servidor analisado: {guild.name}")
-            await interaction.followup.send(embed=embed, ephemeral=True)
+    @grupo.command(name="ver", description="Mostra o mapeamento de canais de status.")
+    @commands.guild_only()
+    async def ver(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        coc = (cfg.get("games") or {}).get("coc") or {}
+        canais = coc.get("status_channel_ids") or {}
 
-async def setup(client: commands.Bot):
+        e = discord.Embed(title=f"🕒 Status do clã · {guild.name}",
+                          color=discord.Color.blurple())
+        e.add_field(name="Clã", value=f"`{coc.get('clan_tag') or '—'}`", inline=True)
+        e.add_field(name="Ativo", value="sim" if coc.get("enabled") else "não", inline=True)
+        e.add_field(name="Credenciais", value="ok" if (COC_EMAIL and COOC_PASSWORD)
+                    else "faltando no .env", inline=True)
+        linhas = []
+        for chave, canal_id in canais.items():
+            canal = guild.get_channel(canal_id)
+            linhas.append(f"**{chave}** → {canal.mention if canal else '`canal ausente`'}")
+        e.add_field(name="Canais mapeados", value="\n".join(linhas) or "—", inline=False)
+        e.set_footer(text="Ajuste o mapeamento no painel web → Jogos")
+        await interaction.response.send_message(embed=e, ephemeral=True)
+
+    @grupo.command(name="auto-detectar", description="Detecta canais por emoji e sugere o mapeamento.")
+    @commands.guild_only()
+    @commands.has_permissions(manage_channels=True)
+    async def auto_detectar(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        coc = (cfg.get("games") or {}).get("coc") or {}
+        canais = coc.get("status_channel_ids") or {}
+        achados = self._achar_canais(guild, canais.get("categoria_id"))
+
+        if not achados:
+            return await interaction.response.send_message(
+                "Não encontrei canais de status por emoji. Configure manualmente no painel.",
+                ephemeral=True)
+
+        linhas = [f"`{chave}` → {ch.id} ({ch.name})" for chave, ch in achados.items()]
+        await interaction.response.send_message(
+            "Encontrei estes canais. Copie o mapeamento para o painel "
+            "(Jogos → Canais de status):\n```\n" + "\n".join(linhas) + "\n```",
+            ephemeral=True)
+
+
+async def setup(client: commands.Bot) -> None:
     await client.add_cog(StatusCla(client))

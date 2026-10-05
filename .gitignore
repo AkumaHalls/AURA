@@ -1,2 +1,29 @@
+# Segredos — NUNCA versionar
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# Dados locais / backups do AURA
+sync_signal.txt
+*.log
+registrations.json
+backups/
+instance/
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

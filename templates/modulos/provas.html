@@ -1,0 +1,81 @@
+{% from "modulo_form.html" import campo_canal, campo_cargo, campo_numero, acao_validar, ajuda_placeholders, salvar with context %}
+
+{% set pv = cfg.provas %}
+
+<form method="post" action="{{ url_for('salvar_generico', modulo='provas', guild=guild.id) }}">
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold">
+      <div class="form-check form-switch d-inline-block me-2">
+        <input class="form-check-input" type="checkbox" name="enabled" id="pv_on"
+               {{ 'checked' if pv.enabled }}>
+      </div>
+      <label class="form-check-label fw-semibold mb-0" for="pv_on">Exame de qualificação</label>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label" for="bank_name">Nome da banca</label>
+          <input class="form-control" name="bank_name" id="bank_name" value="{{ pv.bank_name }}"
+                 maxlength="80">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="title">Título</label>
+          <input class="form-control" name="title" id="title" value="{{ pv.title }}" maxlength="120">
+        </div>
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="require_approval" id="pv_apr"
+                   {{ 'checked' if pv.require_approval }}>
+            <label class="form-check-label" for="pv_apr">
+              Aprovar manualmente antes de liberar o cargo
+            </label>
+          </div>
+        </div>
+        <div class="col-md-4">{{ campo_cargo('approval_role_id', 'Cargo de aprovador', pv.approval_role_id) }}</div>
+        <div class="col-md-4">{{ campo_canal('notify_channel_id', 'Canal de avisos', pv.notify_channel_id) }}</div>
+        <div class="col-md-4">{{ campo_canal('backup_channel_id', 'Canal de resultados', pv.backup_channel_id) }}</div>
+        <div class="col-md-3">
+          <label class="form-label" for="time_per_question">Tempo por pergunta (s)</label>
+          <input type="number" min="10" max="600" class="form-control" name="time_per_question"
+                 id="time_per_question" value="{{ pv.time_per_question }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="pass_score">Nota mínima</label>
+          <input type="number" min="0" max="10" class="form-control" name="pass_score"
+                 id="pass_score" value="{{ pv.pass_score }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="cooldown_days">Recarga (dias)</label>
+          <input type="number" min="0" max="30" class="form-control" name="cooldown_days"
+                 id="cooldown_days" value="{{ pv.cooldown_days }}">
+        </div>
+        <div class="col-md-3">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="shuffle_answers" id="pv_sh"
+                   {{ 'checked' if pv.shuffle_answers }}>
+            <label class="form-check-label" for="pv_sh">Embaralhar alternativas</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-aura px-4">
+    <i class="bi bi-check2 me-1"></i>Salvar provas
+  </button>
+</form>
+
+<div class="card-aura card mt-4">
+  <div class="card-header fw-semibold">Como funciona</div>
+  <div class="card-body">
+    <ol class="placeholder-doc mb-0">
+      <li>Use <code>/prova criar</code> no Discord para montar o questionário.</li>
+      <li>O membro responde com <code>/prova iniciar</code>.</li>
+      <li>Nota mínima define aprovação automática.</li>
+      <li>As tentativas ficam registradas por servidor no painel.</li>
+    </ol>
+    <a class="btn btn-sm btn-outline-secondary mt-3" href="{{ url_for('provas', guild=guild.id) }}">
+      <i class="bi bi-list-ul me-1"></i>Ver tentativas
+    </a>
+  </div>
+</div>

@@ -1,0 +1,131 @@
+{% from "modulo_form.html" import campo_canal, campo_cargo, campo_numero, acao_validar, ajuda_placeholders, salvar with context %}
+
+{% set jogo = request.args.get('jogo') or request.form.get('jogo') or 'coc' %}
+{% set bloco = cfg.games[jogo] %}
+{% set eh_coc = (jogo == 'coc') %}
+
+
+<div class="d-flex gap-2 mb-4">
+  <a class="btn btn-sm {{ 'btn-aura' if eh_coc else 'btn-outline-secondary' }}"
+     href="{{ url_for('modulo', modulo='games', guild=guild.id, jogo='coc') }}">
+    🏰 Clash of Clans
+  </a>
+  <a class="btn btn-sm {{ 'btn-aura' if not eh_coc else 'btn-outline-secondary' }}"
+     href="{{ url_for('modulo', modulo='games', guild=guild.id, jogo='arma3') }}">
+    🎯 Arma 3
+  </a>
+</div>
+
+<form method="post" action="{{ url_for('salvar_games', guild=guild.id) }}">
+  <input type="hidden" name="jogo" value="{{ jogo }}">
+
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold">
+      <div class="form-check form-switch d-inline-block me-2">
+        <input class="form-check-input" type="checkbox" name="enabled" id="gm_on"
+               {{ 'checked' if bloco.enabled }}>
+      </div>
+      <label class="form-check-label fw-semibold mb-0" for="gm_on">
+        {{ 'Clash of Clans' if eh_coc else 'Arma 3' }} habilitado
+      </label>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        {% if eh_coc %}
+        <div class="col-md-4">
+          <label class="form-label" for="clan_tag">Tag do clã</label>
+          <input class="form-control mono" name="clan_tag" id="clan_tag"
+                 value="{{ bloco.clan_tag or '' }}" placeholder="#ABC">
+        </div>
+        <div class="col-md-4">{{ campo_canal('registration_channel_id', 'Canal de registro', bloco.registration_channel_id) }}</div>
+        <div class="col-md-4">{{ campo_canal('approval_channel_id', 'Canal de aprovação', bloco.approval_channel_id) }}</div>
+        <div class="col-md-4">{{ campo_canal('log_channel_id', 'Canal de logs', bloco.log_channel_id) }}</div>
+        <div class="col-md-4">
+          <label class="form-label" for="verify_hours">Verificar a cada (horas)</label>
+          <input type="number" min="1" max="168" class="form-control" name="verify_hours"
+                 id="verify_hours" value="{{ bloco.verify_hours }}">
+        </div>
+        <div class="col-12">
+          <label class="form-label">Mensagem ao remover alguém do servidor</label>
+          <input class="form-control" name="kick_message" value="{{ bloco.kick_message }}"
+                 maxlength="500">
+        </div>
+
+        <div class="col-12 mt-3">
+          <div class="placeholder-doc mb-2">Cargos por patente dentro do clã</div>
+          <div class="row g-2">
+            {% for cargo, rotulo in [('member', 'Membro'), ('elder', 'Ancião'), ('coleader', 'Líder')] %}
+            <div class="col-md-4">
+              <label class="form-label placeholder-doc" for="role_{{ cargo }}">{{ rotulo }}</label>
+              <select class="form-select" id="role_{{ cargo }}" name="role_{{ cargo }}">
+                <option value="">— sem cargo —</option>
+                {% for r in canais.get('roles', []) if not r.managed %}
+                <option value="{{ r.id }}" {{ 'selected' if bloco.roles[cargo]|string == r.id }}>
+                  {{ r.name }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="form-text placeholder-doc">
+            Ao remover alguém do clã, o AURA tira o cargo correspondente.
+          </div>
+        </div>
+
+        <div class="col-12 mt-3">
+          <div class="placeholder-doc mb-2">Canais de status do clã</div>
+          <div class="row g-2">
+            {% for chave, rotulo in [('membros', 'Membros'), ('vivos', 'Vivos agora'),
+                                      ('inativos', 'Inativos'), ('banidos', 'Banidos')] %}
+            <div class="col-md-6">
+              <label class="form-label placeholder-doc" for="status_{{ chave }}">{{ rotulo }}</label>
+              <select class="form-select form-select-sm" id="status_{{ chave }}"
+                      name="status_{{ chave }}">
+                <option value="">— não usar —</option>
+                {% for ch in canais.get('channels', []) if ch.type == 'text' %}
+                <option value="{{ ch.id }}"
+                        {{ 'selected' if bloco.status_channel_ids.get(chave)|string == ch.id }}>
+                  {{ ch.name }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% else %}
+        <div class="col-md-4">{{ campo_canal('whitelist_channel_id', 'Canal de whitelist', bloco.whitelist_channel_id) }}</div>
+        <div class="col-md-4">{{ campo_canal('log_channel_id', 'Canal de logs', bloco.log_channel_id) }}</div>
+        <div class="col-md-4">{{ campo_cargo('role_player', 'Cargo de jogador', bloco.role_player) }}</div>
+        <div class="col-md-4">{{ campo_cargo('role_whitelisted', 'Cargo de liberado', bloco.role_whitelisted) }}</div>
+        <div class="col-md-4">{{ campo_cargo('role_vip', 'Cargo VIP', bloco.role_vip) }}</div>
+        <div class="col-md-4">
+          <label class="form-label" for="auto_tag_on_join">Cargo automático ao entrar</label>
+          <select class="form-select" id="auto_tag_on_join" name="auto_tag_on_join">
+            <option value="">— não dar —</option>
+            {% for r in canais.get('roles', []) if not r.managed %}
+            <option value="{{ r.id }}" {{ 'selected' if bloco.auto_tag_on_join|string == r.id }}>
+              {{ r.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="sync_tags_on_message"
+                   id="a3_sync" {{ 'checked' if bloco.sync_tags_on_message }}>
+            <label class="form-check-label" for="a3_sync">
+              Sincronizar tags nas mensagens do Discord
+            </label>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-aura px-4">
+    <i class="bi bi-check2 me-1"></i>Salvar {{ 'Clash of Clans' if eh_coc else 'Arma 3' }}
+  </button>
+</form>

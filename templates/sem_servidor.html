@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block titulo %}Sem servidor{% endblock %}
+
+{% block conteudo %}
+<div class="text-center py-5">
+  <i class="bi bi-server" style="font-size:3rem;color:#6e7681"></i>
+  <h1 class="h5 text-white mt-3">Nenhum servidor disponível</h1>
+  <p class="text-muted">
+    O painel só mostra servidores onde o AURA está conectado.
+    Confira o token no <code>.env</code> e se o bot foi convidado.
+  </p>
+
+  <div class="card-aura card text-start mx-auto" style="max-width:520px">
+    <div class="card-body">
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge {{ 'chip-on' if bot.online else 'chip-off' }}">
+          {{ 'bot online' if bot.online else 'bot offline' }}
+        </span>
+        <span class="placeholder-doc">
+          {{ bot.guild_count }} servidor(es) · {{ bot.command_count }} comandos
+        </span>
+      </div>
+      <a class="btn btn-sm btn-outline-secondary mt-3" href="{{ url_for('health') }}">
+        <i class="bi bi-activity me-1"></i>Estado do serviço
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

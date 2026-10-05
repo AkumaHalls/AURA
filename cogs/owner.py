@@ -1,198 +1,257 @@
-import discord
+"""
+AURA · Dono e informações do bot
+------------------------------
+Comandos globais do AURA: falar em massa, listar servidores, sincronizar
+comandos e informações de sistema.
+
+A autorização usa `OWNER_ID` do .env mais os `owner_ids` registrados em cada
+servidor pelo painel — assim dá para adicionar um dono sem reiniciar o bot.
+"""
+
+from __future__ import annotations
+
 import os
-import psutil
 import platform
 import time
-from discord.ext import commands
+from typing import List
+
+import discord
+import psutil
 from discord import app_commands
+from discord.ext import commands
 from dotenv import load_dotenv
 
-# CARREGA E LE O ARQUIVO .env na raiz do projeto
-# O '..' sobe um nível de diretório para encontrar o .env
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+from core import runtime
+from core import settings as st
 
-try:
-    # Acessa e define o id do dono a partir do .env
-    donoid = int(os.getenv("DONO_ID"))
-except (ValueError, TypeError):
-    print("AVISO: A variável de ambiente 'DONO_ID' não está definida ou não é um número. Comandos de dono não funcionarão.")
-    donoid = None # Define como None para que as verificações falhem de forma segura
+load_dotenv()
 
-# Pega o processo atual para informações de sistema
 PROC = psutil.Process(os.getpid())
+INICIO = time.time()
 
-def getdonoid():
-    """Função para retornar o ID do dono."""
-    return donoid
+_mensagem_erro = (
+    "<:ew:969703224825225266> Não consegui fazer isso. "
+    "Confira se você está no canal certo e se tem permissão."
+)
 
-def getmensagemerro():
-    """Função para retornar a mensagem de erro padrão."""
-    return mensagemerro
 
-# Mensagem de erro que será exibida sempre que um comando falhar.
-mensagemerro = "<:ew:969703224825225266> Ue? Isso não funcionou como deveria... \nAcho que você tentou usar isso em um canal errado ou não tem permissão para tal função <:derp:969703169670131812>"
+def getdonoid() -> int:
+    try:
+        return int(os.getenv("OWNER_ID") or os.getenv("DONO_ID"))
+    except (TypeError, ValueError):
+        return None
 
-# Início da classe da Cog
-class onwer(commands.Cog):
+
+def getmensagemerro() -> str:
+    return _mensagem_erro
+
+
+def _dono_do_env() -> int:
+    return getdonoid()
+
+
+class Owner(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """Evento que é acionado quando a Cog está pronta."""
-        print("Cog onwer carregado.")
-
-    # GRUPO DE COMANDOS 'dono'
-    dono = app_commands.Group(name="owner", description="Comandos de dono do bot.")
-
-    @dono.command(name="say", description="🦊⠂Diga alguma coisa como AURA")
-    @app_commands.describe(mensagem="Qual é a mensagem?")
-    async def say(self, interaction: discord.Interaction, mensagem: str):
-        print(f"Comando say - User: {interaction.user.name} - mensagem:{mensagem}")
-        if interaction.user.id == donoid:
-            await interaction.response.send_message("<:BN:416595378956271626>┃ enviando sua mensagem...", ephemeral=True)
-            await interaction.channel.send(f"{mensagem}")
-        else:
-            await interaction.response.send_message(mensagemerro, ephemeral=True)
-
-    @dono.command(name="listar", description="🦊⠂lista os servidores que o AURA está.")
-    async def listservers(self, interaction: discord.Interaction):
-        print(f"Usuario: {interaction.user.name} usou lista servidores")
-        if interaction.user.id == donoid:
-            await interaction.response.defer(ephemeral=True)
-            servers = self.client.guilds
-            lista = "Lista de Servidores 🦊\n"
-            for server in servers:
-                lista += f"Nome:`{server.name}` - id:`{server.id}`\n"
-            await interaction.followup.send(content=lista)
-        else:
-            await interaction.response.send_message(mensagemerro, ephemeral=True)
-
-    @dono.command(name="sair", description="🦊⠂Faz o AURA sair de um servidor.")
-    @app_commands.describe(id_servidor="Qual é a ID do servidor?")
-    async def leave(self, interaction: discord.Interaction, id_servidor: str):
-        print(f"Usuario: {interaction.user.name} usou sair servidores")
-        if interaction.user.id == donoid:
-            try:
-                guild = self.client.get_guild(int(id_servidor))
-                if guild:
-                    await guild.leave()
-                    await interaction.response.send_message(f"Saí do servidor: {guild.name}")
-                else:
-                    await interaction.response.send_message("Não encontrei um servidor com essa ID.", ephemeral=True)
-            except ValueError:
-                await interaction.response.send_message("A ID do servidor deve ser um número.", ephemeral=True)
-        else:
-            await interaction.response.send_message(mensagemerro, ephemeral=True)
-
-    @dono.command(name="bot-name", description="🦊⠂Define um novo nome ao bot")
-    @app_commands.describe(nome="Qual é o novo nome?")
-    async def set_bot_name(self, interaction: discord.Interaction, nome: str):
-        print(f"Comando bot-name - User: {interaction.user.name} - novo nome:{nome}")
-        if interaction.user.id == donoid:
-            await self.client.user.edit(username=nome)
-            await interaction.response.send_message(f"<:BN:416595378956271626>┃ O Nome do bot foi definido para {nome}", ephemeral=True)
-        else:
-            await interaction.response.send_message(mensagemerro, ephemeral=True)
-
-    @dono.command(name="sync", description="🦊⠂Força a sincronização dos comandos slash (limpa cache e re-sincroniza)")
-    async def sync_commands(self, interaction: discord.Interaction):
-        if interaction.user.id != donoid:
-            return await interaction.response.send_message(mensagemerro, ephemeral=True)
-        await interaction.response.defer(ephemeral=True, thinking=True)
+    async def _eh_dono(self, interaction: discord.Interaction) -> bool:
+        if await self.client.is_owner(interaction.user):
+            return True
+        if st.eh_dono(interaction.user.id):
+            return True
+        if interaction.guild is None:
+            return False
         try:
-            await self.client.full_sync()
-            await interaction.followup.send("✅ Comandos re-sincronizados globalmente. Pode levar até 1h para propagar.")
-        except Exception as e:
-            await interaction.followup.send(f"❌ Erro ao sincronizar: {e}")
+            cfg = await st.get_config_cached(interaction.guild.id,
+                                             guild_name=interaction.guild.name)
+        except Exception:
+            return False
+        return st.eh_dono(interaction.user.id, cfg)
 
-    @dono.command(name="sync-guild", description="🦊⠂Sincroniza comandos em um servidor específico (teste imediato)")
-    @app_commands.describe(guild_id="ID do servidor")
-    async def sync_guild(self, interaction: discord.Interaction, guild_id: str):
-        if interaction.user.id != donoid:
-            return await interaction.response.send_message(mensagemerro, ephemeral=True)
-        await interaction.response.defer(ephemeral=True, thinking=True)
+    async def _recusar(self, interaction: discord.Interaction):
+        if not interaction.response.is_done():
+            await interaction.response.send_message(_mensagem_erro, ephemeral=True)
+
+    # ------------------------------------------------------------------
+    # /owner
+    # ------------------------------------------------------------------
+
+    owner = app_commands.Group(name="owner", description="Comandos do dono do AURA.")
+
+    @owner.command(name="listar", description="Lista os servidores onde o AURA está.")
+    async def listar(self, interaction: discord.Interaction):
+        if not await self._eh_dono(interaction):
+            return await self._recusar(interaction)
+
+        guilds = self.client.guilds
+        if not guilds:
+            return await interaction.response.send_message("O AURA não está em nenhum servidor.",
+                                                           ephemeral=True)
+
+        testes = {int(v) for v in {os.getenv("TEST_GUILD_ID", "")} if str(v).isdigit()}
+        linhas = []
+        for g in guilds[:25]:
+            prefixo = "⭐ " if g.id in testes else "• "
+            linhas.append(f"{prefixo}**{g.name}** · `{g.id}` · "
+                          f"{g.member_count or 0} membros")
+        texto = "\n".join(linhas)
+        if len(guilds) > 25:
+            texto += f"\n…e mais {len(guilds) - 25}"
+
+        await interaction.response.send_message(embed=discord.Embed(
+            title=f"🌐 AURA em {len(guilds)} servidor(es)",
+            description=texto,
+            color=discord.Color.blurple(),
+        ), ephemeral=True)
+
+    @owner.command(name="falar", description="Envia uma mensagem num servidor.")
+    @app_commands.describe(servidor_id="ID do servidor", texto="O que enviar")
+    async def falar(self, interaction: discord.Interaction, servidor_id: str, texto: str):
+        if not await self._eh_dono(interaction):
+            return await self._recusar(interaction)
+        guild = self.client.get_guild(int(servidor_id)) if servidor_id.isdigit() else None
+        if guild is None:
+            return await interaction.response.send_message("Servidor não encontrado.",
+                                                           ephemeral=True)
+        canais = [c for c in guild.text_channels
+                  if c.permissions_for(guild.me).send_messages]
+        if not canais:
+            return await interaction.response.send_message(
+                "O bot não pode enviar mensagens em nenhum canal desse servidor.",
+                ephemeral=True)
+        canal = canais[0]
+        await canal.send(texto[:1900])
+        await interaction.response.send_message(
+            f"Enviado em #{canal.name} ({guild.name}).", ephemeral=True)
+
+    @owner.command(name="sair", description="Faz o AURA sair de um servidor.")
+    @app_commands.describe(servidor_id="ID do servidor")
+    async def sair(self, interaction: discord.Interaction, servidor_id: str):
+        if not await self._eh_dono(interaction):
+            return await self._recusar(interaction)
+        guild = self.client.get_guild(int(servidor_id)) if servidor_id.isdigit() else None
+        if guild is None:
+            return await interaction.response.send_message("Servidor não encontrado.",
+                                                           ephemeral=True)
+        nome = guild.name
         try:
-            guild = discord.Object(id=int(guild_id))
-            self.client.tree.clear_commands(guild=guild)
-            await self.client.tree.sync(guild=guild)
-            await interaction.followup.send(f"✅ Comandos sincronizados para guild {guild_id}.")
-        except Exception as e:
-            await interaction.followup.send(f"❌ Erro: {e}")
+            import mongo_db
+            mongo_db.delete_guild_config(guild.id)
+        except Exception:
+            pass
+        await guild.leave()
+        await interaction.response.send_message(f"Saiu de **{nome}**.", ephemeral=True)
 
-    @dono.command(name="bot-avatar", description="🦊⠂Define um novo avatar ao bot")
-    @app_commands.describe(avatar="Qual é o novo avatar?")
-    async def set_bot_avatar(self, interaction: discord.Interaction, avatar: discord.Attachment):
-        print(f"Comando bot-avatar - User: {interaction.user.name}")
-        if interaction.user.id == donoid:
-            avatar_bytes = await avatar.read()
-            await self.client.user.edit(avatar=avatar_bytes)
-            await interaction.response.send_message(f"<:BN:416595378956271626>┃ O Avatar do bot foi redefinido", ephemeral=True)
-        else:
-            await interaction.response.send_message(mensagemerro, ephemeral=True)
+    @owner.command(name="sync", description="Ressincroniza os comandos do AURA.")
+    async def sync_cmd(self, interaction: discord.Interaction):
+        if not await self._eh_dono(interaction):
+            return await self._recusar(interaction)
+        await interaction.response.defer(ephemeral=True)
+        cmds = [c.name for c in self.client.tree.get_commands()]
+        await self.client.tree.sync()
+        await interaction.followup.send(
+            f"✅ {len(cmds)} comandos sincronizados.\n" + ", ".join(sorted(cmds)),
+            ephemeral=True)
 
-    # GRUPO DE COMANDOS 'bot'
-    bot = app_commands.Group(name="bot", description="Comandos de controle do bot.")
+    @owner.command(name="nome", description="Muda o nome de exibição do bot.")
+    @app_commands.describe(novo="Novo nome")
+    async def nome(self, interaction: discord.Interaction, novo: str):
+        if not await self._eh_dono(interaction):
+            return await self._recusar(interaction)
+        await self.client.user.edit(name=novo[:80])
+        await interaction.response.send_message(f"Agora sou **{novo}**.", ephemeral=True)
 
-    @bot.command(name="ping", description='🤖⠂Exibe o ping do bot')
+    @owner.command(name="avatar", description="Muda o avatar do bot por URL.")
+    @app_commands.describe(url="URL de uma imagem")
+    async def avatar(self, interaction: discord.Interaction, url: str):
+        if not await self._eh_dono(interaction):
+            return await self._recusar(interaction)
+        if not url.startswith("http"):
+            return await interaction.response.send_message("Precisa ser uma URL http(s).",
+                                                           ephemeral=True)
+        try:
+            dados = await _baixar(url)
+            await self.client.user.edit(avatar=dados)
+            await interaction.response.send_message("Avatar atualizado.", ephemeral=True)
+        except Exception as exc:
+            await interaction.response.send_message(f"Falhou: {exc}", ephemeral=True)
+
+    # ------------------------------------------------------------------
+    # /bot
+    # ------------------------------------------------------------------
+
+    bot = app_commands.Group(name="bot", description="Informações do AURA.")
+
+    @bot.command(name="ping", description="Latência do AURA.")
     async def ping(self, interaction: discord.Interaction):
-        print(f"Usuario: {interaction.user.name} usou ping")
-        resposta = discord.Embed(
-            colour=discord.Color.yellow(),
-            title="🏓┃Pong",
-            description=f"Latencia: `{round(self.client.latency * 1000)}`ms."
+        latencia = round(self.client.latency * 1000)
+        await interaction.response.send_message(
+            f"🏓 **{latencia}ms** · {len(self.client.guilds)} servidor(es) · "
+            f"{len(self.client.tree.get_commands())} comandos", ephemeral=True)
+
+    @bot.command(name="info", description="Detalhes do AURA e do servidor.")
+    @commands.guild_only()
+    async def info(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+
+        uso_cpu = psutil.cpu_percent(interval=0.2)
+        memoria = PROC.memory_info().rss / (1024 * 1024)
+        segundos = int(time.time() - INICIO)
+
+        e = discord.Embed(
+            title="🤖 AURA",
+            color=discord.Color.blurple(),
         )
-        await interaction.response.send_message(embed=resposta)
+        e.add_field(name="Versão", value="2.1 · multiserver", inline=True)
+        e.add_field(name="Python", value=platform.python_version(), inline=True)
+        e.add_field(name="discord.py", value=discord.__version__, inline=True)
+        e.add_field(name="Latência", value=f"{round(self.client.latency * 1000)}ms", inline=True)
+        e.add_field(name="Memória", value=f"{memoria:.0f} MB", inline=True)
+        e.add_field(name="CPU", value=f"{uso_cpu:.0f}%", inline=True)
+        e.add_field(name="Online há", value=f"{segundos // 3600}h {(segundos % 3600) // 60}m",
+                    inline=True)
+        e.add_field(name="Servidores", value=str(len(self.client.guilds)), inline=True)
 
-    @bot.command(name="info", description='🤖⠂Exibe informações sobre o bot')
-    async def botinfo(self, interaction: discord.Interaction):
-        print(f"Usuario: {interaction.user.name} usou botinfo")
-        try:
-            # Informações de memória
-            mem = psutil.virtual_memory()
-            mem_total_mb = mem.total / (1024 * 1024)
-            mem_used_mb = mem.used / (1024 * 1024)
-            
-            # Uptime do processo (tempo que o bot está online)
-            start_time_timestamp = int(PROC.create_time())
+        status = st.build_status(cfg)
+        ligados = [s["label"] for s in status if s.get("ativo")]
+        e.add_field(name="Módulos aqui",
+                    value=", ".join(ligados) if ligados else "nenhum ligado",
+                    inline=False)
+        e.set_footer(text=f"{guild.name} · prefixo {cfg.get('prefix')}")
+        if self.client.user.display_avatar:
+            e.set_thumbnail(url=self.client.user.display_avatar.url)
 
-            resposta = discord.Embed(
-                colour=discord.Color.yellow(),
-                title=f"🦊┃Informações do {self.client.user.name}",
-                description="Aqui estão algumas informações sobre mim e a máquina que me hospeda."
-            )
-            if self.client.user.avatar:
-                resposta.set_thumbnail(url=self.client.user.avatar.url)
-            
-            # Informações da Hospedagem (Render)
-            resposta.add_field(name="🖥️ Hospedagem", value="```Render```", inline=True)
-            resposta.add_field(name="👨‍💻 Linguagem", value=f"```Python {platform.python_version()}```", inline=True)
-            resposta.add_field(name="📦 Biblioteca", value=f"```discord.py {discord.__version__}```", inline=True)
+        await interaction.response.send_message(embed=e, ephemeral=True)
 
-            # Informações de Recursos
-            resposta.add_field(name="📊 Uso de RAM", value=f"```{mem_used_mb:.2f} / {mem_total_mb:.2f} MB```", inline=True)
-            resposta.add_field(name="🌡️ Uso de CPU", value=f"```{psutil.cpu_percent()}%```", inline=True)
-            resposta.add_field(name="🕐 Online desde", value=f"<t:{start_time_timestamp}:R>", inline=True)
+    @bot.command(name="modulos", description="Módulos ativos e o que falta em cada um.")
+    @commands.guild_only()
+    async def modulos(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        status = st.build_status(cfg)
 
-            # Informações do Bot
-            resposta.add_field(name="🦊 Dono", value=f"<@{donoid}>", inline=True)
-            resposta.add_field(name="🏓 Ping", value=f"```{round(self.client.latency * 1000)}ms```", inline=True)
-            resposta.add_field(name="🔮 Menção", value=f"<@{self.client.user.id}>", inline=True)
+        linhas = []
+        for s in status:
+            marca = {True: "🟢", False: "⚪"}[bool(s.get("ativo"))]
+            extra = s.get("detalhe") or ("pronto" if s.get("pronto") else "")
+            linhas.append(f"{marca} **{s['label']}** — {extra}")
 
-            await interaction.response.send_message(embed=resposta)
-        except Exception as e:
-            print(f"Erro no comando botinfo: {e}")
-            await interaction.response.send_message("Ocorreu um erro ao buscar as informações do bot.", ephemeral=True)
+        await interaction.response.send_message(embed=discord.Embed(
+            title=f"🧩 Módulos · {guild.name}",
+            description="\n".join(linhas),
+            color=discord.Color.blurple(),
+        ), ephemeral=True)
 
-    @bot.command(name="help", description='🤖⠂Ajuda sobre o bot.')
-    async def help(self, interaction: discord.Interaction):
-        resposta = discord.Embed(
-            colour=discord.Color.yellow(),
-            title="🦊┃Ajuda sobre o bot",
-            description="Eaeee AURA aqui, ainda estou em desenvolvimento"
-        )
-        await interaction.response.send_message(embed=resposta)
+
+async def _baixar(url: str) -> bytes:
+    import aiohttp
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as sess:
+        async with sess.get(url) as resp:
+            resp.raise_for_status()
+            return await resp.read()
+
 
 async def setup(client: commands.Bot) -> None:
-    """Função para carregar a Cog no bot."""
-    await client.add_cog(onwer(client))
+    await client.add_cog(Owner(client))

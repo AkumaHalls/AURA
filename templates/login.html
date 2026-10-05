@@ -1,45 +1,54 @@
-<!DOCTYPE html>
-<html lang="pt-BR" data-bs-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aura Admin - Login</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background: #0f1117; display: flex; align-items: center; min-height: 100vh; }
-        .login-card { background: #1a1d23; border: 1px solid #2d3139; border-radius: 16px; padding: 2.5rem; max-width: 400px; width: 100%; }
-        .login-card h3 { color: #e1e3e6; }
-        .form-control { background: #0f1117; border: 1px solid #2d3139; color: #e1e3e6; }
-        .form-control:focus { background: #0f1117; border-color: #4ade80; box-shadow: 0 0 0 2px rgba(74,222,128,.15); color: #e1e3e6; }
-        .btn-success { background: #166534; border: none; }
-        .btn-success:hover { background: #15803d; }
-    </style>
-</head>
-<body>
-    <div class="container d-flex justify-content-center">
-        <div class="login-card">
-            <div class="text-center mb-4">
-                <i class="bi bi-fox" style="font-size:3rem;color:#4ade80;"></i>
-                <h3 class="mt-2">Aura Admin</h3>
-                <p style="color:#6b7280;">Insira a senha para acessar</p>
-            </div>
-            {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }}">{{ message }}</div>
-            {% endfor %}
-            {% endif %}
-            {% endwith %}
-            {% if error_msg %}
-            <div class="alert alert-danger">{{ error_msg }}</div>
-            {% endif %}
-            <form method="POST">
-                <div class="mb-3">
-                    <input type="password" name="password" class="form-control" placeholder="Senha" required autofocus>
-                </div>
-                <button type="submit" class="btn btn-success w-100">Entrar</button>
-            </form>
+{% extends "base.html" %}
+{% block titulo %}Login{% endblock %}
+
+{% block estilo %}
+<style>
+  body { min-height: 100vh; display: flex; align-items: center; }
+  .caixa-login { width: 100%; max-width: 400px; margin: auto; }
+</style>
+{% endblock %}
+
+{% block conteudo %}
+<div class="caixa-login">
+  <div class="text-center mb-4">
+    <i class="bi bi-hexagon-half" style="font-size:3rem;color:var(--aura-accent)"></i>
+    <h1 class="h3 mt-2 text-white">AURA</h1>
+    <p class="text-muted mb-0">painel de administração</p>
+  </div>
+
+  <div class="card-aura card">
+    <div class="card-body p-4">
+      {% if senha_temp %}
+      <div class="alert alert-warning small">
+        <strong>Primeiro boot:</strong> sua senha foi gerada e salva no <code>.env</code>.
+        <div class="mt-2 p-2 rounded" style="background:#0d1117">
+          <code class="fs-6">{{ senha_temp }}</code>
         </div>
+        <div class="mt-2 mb-0">Use-a abaixo e anote — ela não aparece de novo.</div>
+      </div>
+      {% endif %}
+
+      {% if erro %}
+      <div class="alert alert-danger py-2">{{ erro }}</div>
+      {% endif %}
+
+      <form method="post">
+        <input type="hidden" name="next" value="{{ next }}">
+        <label class="form-label" for="password">Senha</label>
+        <div class="input-group mb-3">
+          <span class="input-group-text bg-transparent border-secondary">
+            <i class="bi bi-key"></i>
+          </span>
+          <input type="password" name="password" id="password" class="form-control"
+                 required autofocus autocomplete="current-password">
+        </div>
+        <button class="btn btn-aura w-100">Entrar</button>
+      </form>
     </div>
-</body>
-</html>
+  </div>
+
+  <p class="text-center text-muted small mt-3">
+    A senha é comparada por hash. A sessão expira em 12 horas.
+  </p>
+</div>
+{% endblock %}

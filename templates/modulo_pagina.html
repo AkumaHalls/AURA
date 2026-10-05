@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "modulo_form.html" import acao_validar, ajuda_placeholders %}
+
+{% block titulo %}{{ meta.label }}{% endblock %}
+
+{% block conteudo %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+  <span style="font-size:1.6rem">{{ meta.icone }}</span>
+  <h1 class="h4 mb-0 text-white">{{ meta.label }}</h1>
+  <span class="badge {{ 'chip-on' if cfg.modules[meta.key] else 'chip-off' }}">
+    {{ 'ativo' if cfg.modules[meta.key] else 'inativo' }}
+  </span>
+</div>
+<p class="text-muted mb-4">{{ meta.descricao }} · {{ guild.name }}</p>
+
+{% if not canais.get('channels') %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle me-1"></i>
+  Os seletores de canal e cargo ficam vazios até o bot conectar no Discord.
+  Você ainda pode salvar textos e números.
+</div>
+{% endif %}
+
+{% include "modulos/" ~ meta.key ~ ".html" %}
+{% endblock %}

@@ -1,0 +1,88 @@
+{# Macros compartilhados pelas páginas de módulo. #}
+
+{% macro campo_canal(nome, rotulo, valor, ajuda='', tipos=('text', 'voice', 'category')) %}
+<div>
+  <label class="form-label" for="f_{{ nome }}">{{ rotulo }}</label>
+  <select class="form-select" id="f_{{ nome }}" name="{{ nome }}">
+    <option value="">— não definido —</option>
+    {% for ch in canais.get('channels', []) %}
+      {% if ch.type|lower in tipos %}
+      <option value="{{ ch.id }}" {{ 'selected' if ch.id|string == valor|string }}>
+        {{ ch.name }}{% if ch.parent %} · {{ ch.parent }}{% endif %} ({{ ch.type }})
+      </option>
+      {% endif %}
+    {% endfor %}
+  </select>
+  {% if ajuda %}<div class="form-text placeholder-doc">{{ ajuda }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+
+{% macro campo_cargo(nome, rotulo, valor, ajuda='') %}
+<div>
+  <label class="form-label" for="f_{{ nome }}">{{ rotulo }}</label>
+  <select class="form-select" id="f_{{ nome }}" name="{{ nome }}">
+    <option value="">— não definido —</option>
+    {% for r in canais.get('roles', []) if not r.managed %}
+      <option value="{{ r.id }}" {{ 'selected' if r.id|string == valor|string }}>
+        {{ r.name }}{{ ' (acima do bot)' if not r.assignable }}
+      </option>
+    {% endfor %}
+  </select>
+  {% if ajuda %}<div class="form-text placeholder-doc">{{ ajuda }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+
+{% macro campo_numero(nome, rotulo, valor, minimo=0, maximo=100, ajuda='') %}
+<div>
+  <label class="form-label" for="f_{{ nome }}">{{ rotulo }}</label>
+  <input type="number" class="form-control" id="f_{{ nome }}" name="{{ nome }}"
+         value="{{ valor if valor is not none else '' }}" min="{{ minimo }}" max="{{ maximo }}">
+  {% if ajuda %}<div class="form-text placeholder-doc">{{ ajuda }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+
+{% macro acao_validar() %}
+<div class="card-aura card mt-4">
+  <div class="card-header fw-semibold"><i class="bi bi-tools me-2"></i>Verificação</div>
+  <div class="card-body d-flex flex-wrap gap-2 align-items-center">
+    <form method="post" action="{{ url_for('acao_validar') }}">
+      <input type="hidden" name="guild" value="{{ guild.id }}">
+      <button class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-shield-check me-1"></i>Validar canais e cargos
+      </button>
+    </form>
+    <span class="placeholder-doc">
+      {% if canais.get('channels') %}
+        {{ canais.channels|length }} canais e {{ canais.roles|length }} cargos visíveis.
+      {% else %}
+        Os seletores ficam vazios até o bot conectar no Discord.
+      {% endif %}
+    </span>
+  </div>
+</div>
+{% endmacro %}
+
+
+{% macro ajuda_placeholders() %}
+<div class="card-aura card mt-4">
+  <div class="card-header fw-semibold"><i class="bi bi-braces me-2"></i>Placeholders</div>
+  <div class="card-body">
+    <p class="placeholder-doc mb-2">Use estas variáveis nas mensagens.</p>
+    <div class="row g-1">
+      {% for chave, texto in placeholders.items() %}
+      <div class="col-md-6"><div class="placeholder-doc"><code>{{ chave }}</code> — {{ texto }}</div></div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+
+{% macro salvar(rotulo='Salvar') %}
+<button class="btn btn-aura px-4">
+  <i class="bi bi-check2 me-1"></i>{{ rotulo }}
+</button>
+{% endmacro %}

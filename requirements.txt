@@ -1,10 +1,22 @@
-discord.py>=2.3.0
+# Núcleo
+discord.py>=2.3.2,<3
 python-dotenv>=1.0.0
+
+# Painel web
+Flask>=3.0.0,<4
+Werkzeug>=3.0.0,<4
+
+# Banco
+pymongo>=4.5.0,<5
+
+# Discord: voz e criptografia de login
 PyNaCl>=1.5.0
-requests>=2.28.0
-flask>=3.0.0
+
+# Clash of Clans (opcional, mas entra na imagem)
+coc.py>=1.15.0
+
+# Status de voz / uso geral
 psutil>=5.9.0
-coc.py
 pytz>=2023.3
 aiohttp>=3.9.0
-pymongo>=4.5.0
+requests>=2.28.0

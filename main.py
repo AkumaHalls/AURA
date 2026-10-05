@@ -1,150 +1,257 @@
-# AS IMPORTAÇÕES NECESSÁRIAS
-import discord
-import os
+"""
+AURA · ponto de entrada
+-----------------------
+Sobe o bot e, assim que o Discord responde, o painel web.
+
+Ordem das coisas:
+    1. carrega o .env
+    2. conecta no MongoDB
+    3. carrega os cogs de cogs/
+    4. registra o cliente em core.runtime (é o que dá acesso ao Discord pelo painel)
+    5. no on_ready: sincroniza comandos, importa config legada do .env, cria as
+       configs que faltam e sobe o Flask na porta WEB_PANEL_PORT
+"""
+
 import asyncio
+import os
+import threading
 import time
 from os import listdir
-from discord.ext import commands, tasks
+
+import discord
 from discord.errors import LoginFailure
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Conecta ao MongoDB (antes de tudo para estar disponível nos cogs e no web panel)
-from mongo_db import conectar
-conectar()
+from core import runtime  # noqa: E402
+from core import settings as st  # noqa: E402
+from mongo_db import conectar, migrar_config_antiga  # noqa: E402
+from web_panel import run_web_panel  # noqa: E402
 
-# Inicia o painel web em uma thread separada
-import threading
-from web_panel import run_web_panel
-threading.Thread(target=run_web_panel, daemon=True).start()
+TOKEN_BOT = os.getenv("DISCORD_TOKEN")
+PREFIXO_PADRAO = "-br"
 
-# Verifica se o arquivo .env existe (opcional para desenvolvimento local)
-if not os.path.exists('.env'):
-    print("O arquivo .env não foi encontrado. Por favor, edite o Exemplo.env para .env com as informações do seu bot.")
-else:
-    load_dotenv()  # Carrega as variáveis de ambiente do arquivo .env (local)
+if not TOKEN_BOT:
+    print("Erro: DISCORD_TOKEN não encontrado.")
+    print("      Copie .env.example para .env e preencha antes de subir.")
+    raise SystemExit(1)
 
-# Carrega o token do bot e o ID do dono a partir das variáveis de ambiente
-token_bot = os.getenv("DISCORD_TOKEN")  # Token do bot
-donoid = os.getenv("OWNER_ID")          # ID do dono do bot
-prefixo = '-br'                         # Define o prefixo do bot
+#: Servidores de teste: os comandos aparecem na hora neles.
+GUILD_IDS_TESTE = [
+    int(v) for v in {
+        os.getenv("TEST_GUILD_ID", ""),
+        os.getenv("id_servidor_tribunal", ""),
+    } if str(v).strip().isdigit()
+]
 
-# Verifica se o token foi carregado corretamente
-if not token_bot:
-    print("Erro: O token do bot não foi encontrado. Certifique-se de que a variável DISCORD_TOKEN foi configurada corretamente.")
-    exit()
 
-SIGNAL_FILE = 'sync_signal.txt'
-
-# Classe básica de inicialização do bot
 class Client(commands.Bot):
     def __init__(self) -> None:
-        # Configura o prefixo do bot e os intents
-        super().__init__(command_prefix=prefixo, intents=discord.Intents().all())
-        self.synced = False  # Evita sincronizar comandos mais de uma vez
+        super().__init__(command_prefix=self._prefixo, intents=discord.Intents().all())
+        self.synced = False
         self.cogslist = []
-
-        # Lê a lista de cogs (arquivos separados com comandos) e registra
-        for cog in listdir("cogs"):
-            if cog.endswith(".py"):
-                cog = os.path.splitext(cog)[0]
-                self.cogslist.append('cogs.' + cog)
-
-    async def setup_hook(self):
-        # Carrega as extensões (cogs) registradas
-        for ext in self.cogslist:
-            await self.load_extension(ext)
-        # Inicia background tasks
-        self.loop.create_task(self._sync_signal_listener())
-
-    async def _sync_signal_listener(self):
-        await self.wait_until_ready()
-        while not self.is_closed():
-            if os.path.exists(SIGNAL_FILE):
-                try:
-                    os.remove(SIGNAL_FILE)
-                    print("Sinal de sync detectado! Limpando cache de guilds...")
-                    for guild in self.guilds:
-                        try:
-                            self.tree.clear_commands(guild=guild)
-                            await self.tree.sync(guild=guild)
-                        except:
-                            pass
-                    await self.tree.sync()
-                    print("Sync completo via sinal do web panel.")
-                except Exception as e:
-                    print(f"Erro no sync via sinal: {e}")
-            await asyncio.sleep(5)
-
-    async def full_sync(self):
-        """Limpa comandos de guild e sincroniza globalmente."""
-        print("Limpando cache de guilds...")
-        for guild in self.guilds:
-            try:
-                self.tree.clear_commands(guild=guild)
-                await self.tree.sync(guild=guild)
-            except:
-                pass
-        await self.tree.sync()
-        print("Sync global concluído.")
-
-    async def on_ready(self):
-        await self.wait_until_ready()
         self.start_time = time.time()
         self.status_index = 0
+        self._painel_subiu = False
+        self._migrou_legado = False
 
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Inicializando..."))
+        for arq in sorted(listdir("cogs")):
+            if arq.endswith(".py") and not arq.startswith("_"):
+                self.cogslist.append("cogs." + os.path.splitext(arq)[0])
 
-        self.loop.create_task(self._iniciar_rotacao_apos_espera())
+    async def _prefixo(self, bot, message):
+        """Cada servidor pode ter seu próprio prefixo; o padrão é -br."""
+        if message and message.guild:
+            try:
+                cfg = await st.get_config_cached(message.guild.id,
+                                                 guild_name=message.guild.name)
+                p = (cfg.get("prefix") or PREFIXO_PADRAO).strip()
+                if p:
+                    return p
+            except Exception:
+                pass
+        return PREFIXO_PADRAO
+
+    # ------------------------------------------------------------------
+    # boot
+    # ------------------------------------------------------------------
+
+    async def setup_hook(self):
+        if not conectar():
+            print("Aviso: sem MongoDB. O painel salva config, mas nada persiste.")
+        else:
+            print("MongoDB conectado.")
+
+        for ext in self.cogslist:
+            try:
+                await self.load_extension(ext)
+            except Exception as exc:
+                print(f"Falha ao carregar {ext}: {exc}")
+        print(f"{len(self.cogslist)} cog(s) no disco.")
+
+        # O painel recebe o cliente: é ele que fala com o Discord pela API.
+        runtime.register_client(self, self.loop)
+        self.loop.create_task(self._ouvir_pedido_de_sync())
+
+    async def _ouvir_pedido_de_sync(self):
+        """O painel pede re-sync dos comandos; aqui o bot atende."""
+        while not self.is_closed():
+            try:
+                if await runtime.wait_sync_request(timeout=5.0):
+                    print("O painel pediu sincronização de comandos.")
+                    await self.full_sync()
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                print(f"Falha no sync pedido pelo painel: {exc}")
+
+    async def on_ready(self):
+        runtime.log("INFO", f"AURA online: {len(self.guilds)} servidor(es)", "bot")
+        self.start_time = time.time()
 
         if not self.synced:
-            cmds = [c.name for c in self.tree.get_commands()]
-            print(f"Comandos registrados no tree: {cmds}")
-            await self.tree.sync()
-            print("Comandos sincronizados globalmente.")
+            await self.full_sync()
             self.synced = True
-            print(f"Comandos sincronizados: {self.synced}")
-        print(f"\nO bot {self.user} já está online e disponível.")
-        print(f"\nID do dono é {donoid}")
 
-    async def _iniciar_rotacao_apos_espera(self):
-        await asyncio.sleep(60)
-        await self._update_status()
-        self.status_rotation.start()
+        guilds = "\n".join(
+            f"  • {g.name} ({g.id}) · {g.member_count or 0} membros"
+            for g in self.guilds
+        ) or "  (nenhum)"
+        print(f"\n✅ {self.user} online em {len(self.guilds)} servidor(es):\n{guilds}")
+
+        await self._preparar_configs()
+
+        if not self.status_rotation.is_running():
+            self.status_rotation.start()
+        self._subir_painel()
+
+    async def _preparar_configs(self):
+        """
+        Importa a configuração antiga do .env uma vez e só depois carrega as
+        configs dos servidores.
+
+        A ordem importa: `get_config_cached` guarda no cache a config padrão de
+        quem ainda não tem nada no Mongo. Se a carga viesse antes da migração,
+        o cache ficaria com o padrão e o painel ignoraria o que foi importado
+        até o cache expirar.
+        """
+        if not self._migrou_legado:
+            self._migrou_legado = True
+            try:
+                for aviso in migrar_config_antiga():
+                    print(f"♻️ {aviso}")
+            except Exception as exc:
+                print(f"Aviso ao importar a config antiga: {exc}")
+
+        for guild in self.guilds:
+            try:
+                await st.get_config_cached(guild.id, guild_name=guild.name)
+            except Exception as exc:
+                print(f"Aviso: config de {guild.name} ficou pendente: {exc}")
+
+    def _subir_painel(self):
+        """Sobe o painel depois do on_ready: assim o runtime já tem o cliente."""
+        if self._painel_subiu:
+            return
+        self._painel_subiu = True
+        threading.Thread(target=run_web_panel, daemon=True).start()
+
+    # ------------------------------------------------------------------
+    # comandos
+    # ------------------------------------------------------------------
+
+    async def full_sync(self):
+        """
+        Publica os comandos. Nos servidores de teste vai por servidor (aparece na
+        hora); nos outros, global (pode demorar até uma hora na Discord).
+        """
+        print("Sincronizando comandos…")
+        cmds = sorted(c.name for c in self.tree.get_commands())
+        print(f"  {len(cmds)} comando(s): {', '.join(cmds)}")
+
+        for guild_id in GUILD_IDS_TESTE:
+            guild = self.get_guild(guild_id)
+            if guild is None:
+                print(f"  · {guild_id} não está no bot, pulando sync de teste")
+                continue
+            try:
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                print(f"  ✓ {guild.name}: sync instantâneo")
+            except Exception as exc:
+                print(f"  ✗ {guild.name}: {exc}")
+
+        try:
+            await self.tree.sync()
+            print("  ✓ sync global")
+        except Exception as exc:
+            print(f"  ✗ sync global falhou: {exc}")
+
+    # ------------------------------------------------------------------
+    # presença
+    # ------------------------------------------------------------------
 
     async def _update_status(self):
         total_users = sum(g.member_count or 0 for g in self.guilds)
         total_cogs = len(self.cogs)
         total_cmds = len(self.tree.get_commands())
         ping = round(self.latency * 1000)
-        uptime_seconds = int(time.time() - self.start_time)
-        uptime_str = f"{uptime_seconds // 3600}h {(uptime_seconds % 3600) // 60}m"
+        segundos = int(time.time() - self.start_time)
+        uptime = f"{segundos // 3600}h {(segundos % 3600) // 60}m"
 
-        activities = [
-            discord.Activity(type=discord.ActivityType.watching, name=f"Operational Cluster • {len(self.guilds)} servidores"),
-            discord.Activity(type=discord.ActivityType.watching, name=f"Latência: {ping}ms • {total_cogs} módulos"),
-            discord.Activity(type=discord.ActivityType.playing, name=f"B.A.D • {total_users} membros"),
-            discord.Activity(type=discord.ActivityType.listening, name=f"{total_cmds} comandos • Uptime: {uptime_str}"),
-            discord.Activity(type=discord.ActivityType.watching, name=f"Sistema Online • v2.0"),
-            discord.Activity(type=discord.ActivityType.competing, name=f"Gerenciando {len(self.guilds)} clãs"),
+        atividades = [
+            discord.Activity(type=discord.ActivityType.watching,
+                             name=f"{len(self.guilds)} servidores • {total_users} membros"),
+            discord.Activity(type=discord.ActivityType.watching,
+                             name=f"Latência {ping}ms • {total_cogs} módulos"),
+            discord.Activity(type=discord.ActivityType.listening,
+                             name=f"{total_cmds} comandos • {uptime}"),
+            discord.Activity(type=discord.ActivityType.watching,
+                             name="AURA • painel por servidor"),
         ]
 
-        activity = activities[self.status_index % len(activities)]
+        await self.change_presence(
+            activity=atividades[self.status_index % len(atividades)])
         self.status_index += 1
-        await self.change_presence(activity=activity)
 
     @tasks.loop(minutes=1)
     async def status_rotation(self):
-        await self._update_status()
+        try:
+            await self._update_status()
+        except Exception:
+            pass
 
-# Inicializa o cliente
-client = Client()
+    @status_rotation.before_loop
+    async def _espera_pronto(self):
+        await self.wait_until_ready()
 
-# Liga o bot e o mantém online
-try:
-    client.run(token_bot)
-except LoginFailure:
-    print("Erro ao fazer login: O token fornecido é inválido ou incorreto.")
-except Exception as e:
-    print(f"Erro desconhecido: {e}")
+    # ------------------------------------------------------------------
+    # eventos
+    # ------------------------------------------------------------------
+
+    async def on_guild_join(self, guild: discord.Guild):
+        """Servidor novo entra com a configuração padrão, pronta para editar."""
+        try:
+            await st.get_config_cached(guild.id, guild_name=guild.name)
+            print(f"➕ {guild.name}: configuração inicial criada.")
+        except Exception as exc:
+            print(f"Aviso ao entrar em {guild.name}: {exc}")
+
+
+def main() -> int:
+    client = Client()
+    try:
+        client.run(TOKEN_BOT)
+    except LoginFailure:
+        print("Erro ao fazer login: token inválido ou o bot saiu do servidor.")
+        return 1
+    except Exception as exc:
+        print(f"Erro ao iniciar o AURA: {exc}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

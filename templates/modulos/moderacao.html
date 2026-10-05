@@ -1,0 +1,290 @@
+{% from "modulo_form.html" import campo_canal, campo_cargo, campo_numero, acao_validar, ajuda_placeholders, salvar with context %}
+
+{% macro bloco_filtro(chave, rotulo, icone, nota='') %}
+{% set f = cfg.moderation[chave] %}
+<div class="filtro-bloco">
+  <div class="form-check form-switch">
+    <input class="form-check-input" type="checkbox" name="{{ chave }}_enabled"
+           id="{{ chave }}_on" {{ 'checked' if f.enabled }}>
+    <label class="form-check-label fw-semibold" for="{{ chave }}_on">{{ icone }} {{ rotulo }}</label>
+  </div>
+
+  <div class="row g-2 mt-1">
+    <div class="col-6 col-md-3">
+      <label class="form-label placeholder-doc" for="{{ chave }}_action">Ação</label>
+      <select class="form-select form-select-sm" name="{{ chave }}_action" id="{{ chave }}_action">
+        {% for a in acoes %}
+        <option value="{{ a }}" {{ 'selected' if f.action == a }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% for campo, rotulo in [('min_chars', 'mín. de letras'),
+                              ('percent', '% maiúsculas'),
+                              ('max_messages', 'máx. mensagens'),
+                              ('max_repeats', 'máx. repetições'),
+                              ('window_seconds', 'janela (s)'),
+                              ('max_user_mentions', 'máx. @pessoas'),
+                              ('max_role_mentions', 'máx. @cargos')] %}
+      {% if campo in f %}
+      <div class="col-6 col-md-3">
+        <label class="form-label placeholder-doc" for="{{ chave }}_{{ campo }}">
+          {{ rotulo }}{% if campo.startswith('percent') or campo == 'window_seconds' %} ({{ campo }}){% endif %}
+        </label>
+        <input type="number" class="form-control form-control-sm" id="{{ chave }}_{{ campo }}"
+               name="{{ chave }}_{{ campo }}" value="{{ f[campo] }}" min="0">
+      </div>
+      {% endif %}
+    {% endfor %}
+    {% if 'message' in f %}
+    <div class="col-12">
+      <label class="form-label placeholder-doc" for="{{ chave }}_message">Mensagem</label>
+      <input class="form-control form-control-sm" id="{{ chave }}_message"
+             name="{{ chave }}_message" value="{{ f.message }}" maxlength="500">
+    </div>
+    {% endif %}
+  </div>
+  {% if nota %}<div class="form-text placeholder-doc">{{ nota }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+
+{% set md = cfg.moderation %}
+
+<form method="post" action="{{ url_for('salvar_moderacao', guild=guild.id) }}">
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold">
+      <div class="form-check form-switch d-inline-block me-2">
+        <input class="form-check-input" type="checkbox" name="enabled" id="md_on"
+               {{ 'checked' if md.enabled }}>
+      </div>
+      <label class="form-check-label fw-semibold mb-0" for="md_on">Moderação automática</label>
+    </div>
+    <div class="card-body">
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">{{ campo_canal('log_channel_id', 'Canal de modlog', md.log_channel_id,
+          'Onde cada infração é registrada.') }}</div>
+        <div class="col-md-4">{{ campo_canal('punish_channel_id', 'Canal de punições', md.punish_channel_id,
+          'Timeout e ban em vez de mensagem directa.') }}</div>
+        <div class="col-md-4">
+          <label class="form-label" for="ignored_channels">Canais ignorados</label>
+          <select class="form-select" id="ignored_channels" name="ignored_channels" multiple size="4">
+            {% for ch in canais.get('channels', []) if ch.type == 'text' %}
+            <option value="{{ ch.id }}" {{ 'selected' if ch.id|int in md.ignored_channels }}>
+              {{ ch.name }}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="form-text placeholder-doc">Segure Ctrl para escolher vários.</div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="ignored_roles">Cargos ignorados</label>
+          <select class="form-select" id="ignored_roles" name="ignored_roles" multiple size="4">
+            {% for r in canais.get('roles', []) if not r.managed %}
+            <option value="{{ r.id }}" {{ 'selected' if r.id|int in md.ignored_roles }}>{{ r.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text placeholder-doc">Staff e cargos de confiança passam batidos.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold"><i class="bi bi-chat-left-text me-2"></i>Palavras e expressões</div>
+    <div class="card-body">
+      <div class="form-check form-switch mb-2">
+        <input class="form-check-input" type="checkbox" name="words_enabled" id="words_on"
+               {{ 'checked' if md.words.enabled }}>
+        <label class="form-check-label" for="words_on">Filtrar termos proibidos</label>
+      </div>
+
+      {% for t in md.words.terms %}
+      <div class="d-flex gap-2 align-items-center mb-2">
+        <input class="form-control form-control-sm mono" name="termo_{{ loop.index }}"
+               value="{{ t.term }}" placeholder="termo ou regex">
+        <select class="form-select form-select-sm" name="modo_{{ loop.index }}" style="width:150px">
+          {% for m in ['palavra', 'palavra_inteira', 'regex'] %}
+          <option value="{{ m }}" {{ 'selected' if t.mode == m }}>{{ m }}</option>
+          {% endfor %}
+        </select>
+        <select class="form-select form-select-sm" name="sev_{{ loop.index }}" style="width:150px">
+          {% for s in severidades %}
+          <option value="{{ s }}" {{ 'selected' if t.severity == s }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+
+      <details class="mt-2">
+        <summary class="placeholder-doc">+ adicionar termo</summary>
+        {% set novo = md.words.terms|length + 1 %}
+        <div class="d-flex gap-2 align-items-center mt-2">
+          <input class="form-control form-control-sm mono" name="termo_{{ novo }}"
+                 placeholder="termo ou regex">
+          <select class="form-select form-select-sm" name="modo_{{ novo }}" style="width:150px">
+            {% for m in ['palavra', 'palavra_inteira', 'regex'] %}
+            <option value="{{ m }}">{{ m }}</option>
+            {% endfor %}
+          </select>
+          <select class="form-select form-select-sm" name="sev_{{ novo }}" style="width:150px">
+            {% for s in severidades %}
+            <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </details>
+
+      <div class="row g-2 mt-3">
+        <div class="col-md-4">
+          <label class="form-label">Ação</label>
+          <select class="form-select" name="words_action">
+            {% for a in acoes %}
+            <option value="{{ a }}" {{ 'selected' if md.words.action == a }}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-8">
+          <label class="form-label">Mensagem</label>
+          <input class="form-control" name="words_message" value="{{ md.words.message }}" maxlength="500">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-lg-6">
+      <div class="card-aura card h-100">
+        <div class="card-header fw-semibold"><i class="bi bi-link-45deg me-2"></i>Links</div>
+        <div class="card-body">
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="links_enabled" id="links_on"
+                   {{ 'checked' if md.links.enabled }}>
+            <label class="form-check-label" for="links_on">Filtrar links</label>
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label">Modo</label>
+              <select class="form-select" name="links_mode">
+                {% for m in modos_link %}
+                <option value="{{ m }}" {{ 'selected' if md.links.mode == m }}>{{ m }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label">Ação</label>
+              <select class="form-select" name="links_action">
+                {% for a in acoes %}
+                <option value="{{ a }}" {{ 'selected' if md.links.action == a }}>{{ a }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Domínios permitidos</label>
+              <textarea class="form-control mono" name="links_dominios" rows="2"
+                        placeholder="discord.gg&#10;youtube.com">{{ md.links.allowed_domains|join('&#10;') }}</textarea>
+              <div class="form-text placeholder-doc">Um por linha. Vazio = nenhum permitido.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card-aura card h-100">
+        <div class="card-header fw-semibold"><i class="bi bi-person-plus me-2"></i>Convites</div>
+        <div class="card-body">
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="invites_enabled" id="inv_on"
+                   {{ 'checked' if md.invites.enabled }}>
+            <label class="form-check-label" for="inv_on">Bloquear convites do Discord</label>
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label">Ação</label>
+              <select class="form-select" name="invites_action">
+                {% for a in acoes %}
+                <option value="{{ a }}" {{ 'selected' if md.invites.action == a }}>{{ a }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label">Mensagem</label>
+              <input class="form-control" name="invites_message" value="{{ md.invites.message }}"
+                     maxlength="500">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold"><i class="bi bi-funnel me-2"></i>Outros filtros</div>
+    <div class="card-body">
+      {{ bloco_filtro('caps', 'Caixa alta', '🔠', 'Só conta mensagens acima do mínimo de letras.') }}
+      {{ bloco_filtro('zerospace', 'Caracteres invisíveis', '👻') }}
+      {{ bloco_filtro('flood', 'Flood', '🌊') }}
+      {{ bloco_filtro('duplicate', 'Mensagens repetidas', '🔁') }}
+      {{ bloco_filtro('mentions', 'Menções em massa', '📢') }}
+    </div>
+  </div>
+
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold"><i class="bi bi-ladder me-2"></i>Escalonamento</div>
+    <div class="card-body">
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="escalation_enabled"
+                   id="esc_on" {{ 'checked' if md.escalation.enabled }}>
+            <label class="form-check-label" for="esc_on">Pune repetidamente quem continua</label>
+          </div>
+          <div class="form-text placeholder-doc">
+            As infrações do mesmo membro somam. Os passos abaixo decidem o que fazer.
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="escalation_dm"
+                   id="esc_dm" {{ 'checked' if md.escalation.dm_user }}>
+            <label class="form-check-label" for="esc_dm">Avisar por DM</label>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Cargos isentos</label>
+          <select class="form-select" name="escalation_exempt_roles" multiple size="3">
+            {% for r in canais.get('roles', []) if not r.managed %}
+            <option value="{{ r.id }}" {{ 'selected' if r.id|int in md.escalation.exempt_roles }}>
+              {{ r.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      {% for p in md.escalation.steps %}
+      <div class="d-flex gap-2 align-items-center mb-2">
+        <span class="badge chip-off">após</span>
+        <input type="number" min="1" class="form-control form-control-sm" style="width:80px"
+               name="esc_after_{{ loop.index }}" value="{{ p.after }}">
+        <span class="badge chip-off">infrações</span>
+        <select class="form-select form-select-sm" name="esc_action_{{ loop.index }}" style="width:170px">
+          {% for a in acoes %}
+          <option value="{{ a }}" {{ 'selected' if p.action == a }}>{{ a }}</option>
+          {% endfor %}
+        </select>
+        <input type="number" min="0" class="form-control form-control-sm" style="width:110px"
+               name="esc_seconds_{{ loop.index }}" value="{{ p.seconds or '' }}"
+               placeholder="segundos">
+      </div>
+      {% endfor %}
+      <div class="form-text placeholder-doc">
+        O campo de segundos vale para <code>timeout</code>. Os passos são aplicados em ordem.
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-aura px-4">
+    <i class="bi bi-check2 me-1"></i>Salvar moderação
+  </button>
+</form>

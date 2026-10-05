@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block titulo %}Infrações{% endblock %}
+
+{% block conteudo %}
+<h1 class="h4 text-white mb-4"><i class="bi bi-exclamation-octagon me-2"></i>Infrações</h1>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="stat p-3">
+      <div class="num">{{ stats.total }}</div>
+      <div class="rot">total em {{ stats.periodo_dias }}d</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat p-3">
+      <div class="num">{{ top|length }}</div>
+      <div class="rot">membros reincidentes</div>
+    </div>
+  </div>
+</div>
+
+<form class="row g-2 mb-3" method="get">
+  <input type="hidden" name="guild" value="{{ guild.id }}">
+  <div class="col-md-4">
+    <input class="form-control" name="busca" value="{{ busca }}" placeholder="nome ou motivo">
+  </div>
+  <div class="col-md-4">
+    <input class="form-control mono" name="user_id" value="{{ user_id }}" placeholder="ID do membro">
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary"><i class="bi bi-search"></i></button>
+  </div>
+  {% if busca or user_id %}
+  <div class="col-auto">
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('infracoes', guild=guild.id) }}">limpar</a>
+  </div>
+  {% endif %}
+</form>
+
+<div class="card-aura card">
+  <div class="card-body p-0">
+    {% if itens %}
+    <div class="table-responsive scroll-alto">
+      <table class="table table-aura table-hover mb-0">
+        <thead>
+          <tr><th>Quando</th><th>Membro</th><th>Filtro</th><th>Severidade</th>
+              <th>Punição</th><th>Moderador</th><th>Evidência</th></tr>
+        </thead>
+        <tbody>
+          {% for i in itens %}
+          <tr>
+            <td class="mono placeholder-doc">{{ i.date|datahora }}</td>
+            <td>
+              {{ i.user_name or i.user_id }}
+              <div class="placeholder-doc mono">{{ i.user_id }}</div>
+            </td>
+            <td>{{ i.filtro or '—' }}</td>
+            <td>
+              {% set sev = i.severidade or 'baixa' %}
+              <span class="badge {{ 'chip-off' if sev == 'baixa' else 'chip-warn' }}"
+                    {{ 'style=background:rgba(248,81,73,.15);color:#f85149;border:1px solid rgba(248,81,73,.4)' if sev == 'alta' }}>
+                {{ sev }}
+              </span>
+            </td>
+            <td>{{ i.punicao or '—' }}</td>
+            <td>{{ i.mod_name or i.mod_id or 'sistema' }}</td>
+            <td class="placeholder-doc">{{ (i.evidencia or '')[:60] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-center text-muted py-5 mb-0">Nenhuma infração registrada.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

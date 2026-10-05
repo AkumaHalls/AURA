@@ -1,41 +1,119 @@
 {% extends "base.html" %}
-{% block title %}Tickets{% endblock %}
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="mb-0"><i class="bi bi-ticket"></i> Tickets de Atendimento</h4>
+{% block titulo %}Tickets{% endblock %}
+
+{% block conteudo %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+  <h1 class="h4 mb-0 text-white"><i class="bi bi-ticket-perforated me-2"></i>Tickets</h1>
+  <div class="ms-auto d-flex gap-2">
+    {% for s, rotulo in [('', 'todos'), ('aberto', 'abertos'), ('atendendo', 'em atendimento'),
+                         ('fechado', 'fechados')] %}
+    <a class="btn btn-sm {{ 'btn-aura' if status == s else 'btn-outline-secondary' }}"
+       href="{{ url_for('tickets', guild=guild.id, status=s, busca=busca) }}">
+      {{ rotulo }}
+    </a>
+    {% endfor %}
+  </div>
 </div>
-<div class="card-table">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h6 class="mb-0">Todos os Tickets</h6>
-        <span style="color:#6b7280;">{{ tickets|length }} registro(s)</span>
-    </div>
-    <div class="p-0">
-        {% if tickets %}
-        <table class="table table-hover mb-0">
-            <thead><tr><th>Usuário</th><th>Tipo</th><th>Status</th><th>Atendente</th><th>Data</th><th></th></tr></thead>
-            <tbody>
-            {% for t in tickets %}
-            <tr>
-                <td>{{ t.user_name }}</td>
-                <td>{{ t.tipo }}</td>
-                <td>{% if t.status == 'aberto' %}<span class="badge" style="background:#1a3a2a;color:#4ade80;">Aberto</span>{% elif t.status == 'atendendo' %}<span class="badge" style="background:#1a2a3a;color:#60a5fa;">Em Atendimento</span>{% else %}<span class="badge" style="background:#2a1a1a;color:#f87171;">Fechado</span>{% endif %}</td>
-                <td>{{ t.atendente or '—' }}</td>
-                <td style="color:#6b7280;">{{ t.data[:19]|replace('T', ' ') }}</td>
-                <td style="white-space:nowrap;">
-                    <a href="/ticket/{{ t.user_id }}/{{ t.data }}" class="btn btn-sm" style="background:transparent;border:none;color:#60a5fa;padding:0 6px 0 0;" title="Ver transcrição"><i class="bi bi-eye"></i></a>
-                    <form method="POST" onsubmit="return confirm('Deletar este ticket?')" style="display:inline">
-                        <input type="hidden" name="user_id" value="{{ t.user_id }}">
-                        <input type="hidden" name="data" value="{{ t.data }}">
-                        <button type="submit" class="btn btn-sm" style="background:transparent;border:none;color:#f87171;padding:0;"><i class="bi bi-trash"></i></button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <div class="empty-state"><i class="bi bi-ticket"></i><p>Nenhum ticket registrado.</p></div>
-        {% endif %}
-    </div>
+
+<div class="row g-3 mb-4">
+  {% for chave, rotulo in [('total', 'total'), ('aberto', 'abertos'),
+                           ('atendendo', 'em atendimento'), ('fechado', 'fechados')] %}
+  <div class="col-6 col-lg-3">
+    <a class="stat p-3 d-block text-decoration-none"
+       href="{{ url_for('tickets', guild=guild.id, status=chave) }}">
+      <div class="num">{{ contagem[chave] }}</div>
+      <div class="rot">{{ rotulo }}</div>
+    </a>
+  </div>
+  {% endfor %}
 </div>
+
+<form class="row g-2 mb-3" method="get">
+  <input type="hidden" name="guild" value="{{ guild.id }}">
+  <input type="hidden" name="status" value="{{ status }}">
+  <div class="col-md-5">
+    <input class="form-control" name="busca" value="{{ busca }}"
+           placeholder="membro, ID, categoria ou atendente">
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-outline-secondary"><i class="bi bi-search"></i></button>
+  </div>
+  {% if busca %}
+  <div class="col-auto">
+    <a class="btn btn-outline-secondary" href="{{ url_for('tickets', guild=guild.id) }}">
+      limpar
+    </a>
+  </div>
+  {% endif %}
+</form>
+
+<div class="card-aura card">
+  <div class="card-body p-0">
+    {% if tickets %}
+    <div class="table-responsive">
+      <table class="table table-aura table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Membro</th>
+            <th>Categoria</th>
+            <th>Status</th>
+            <th>Atendente</th>
+            <th>Aberto</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tickets %}
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                {% if t.avatar %}
+                <img src="{{ t.avatar }}" width="24" height="24" style="border-radius:50%">
+                {% endif %}
+                <div>
+                  <div class="text-white">{{ t.user_name or t.user_id }}</div>
+                  <div class="placeholder-doc mono">{{ t.user_id }}</div>
+                </div>
+              </div>
+            </td>
+            <td>{{ t.tipo or '—' }}</td>
+            <td>
+              <span class="badge {{ {'aberto': 'chip-warn', 'atendendo': 'chip-on',
+                                  'fechado': 'chip-off'}.get(t.status, 'chip-off') }}">
+                {{ t.status }}
+              </span>
+            </td>
+            <td>{{ t.atendente or '—' }}</td>
+            <td class="mono placeholder-doc">{{ t.data|datahora }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-secondary"
+                 href="{{ url_for('ticket', ticket_id=t._id) }}">
+                <i class="bi bi-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-center text-muted py-5 mb-0">Nenhum ticket encontrado.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if contagem.total > por_pagina %}
+<nav class="mt-3">
+  <ul class="pagination pagination-sm">
+    {% for p in range(1, ((contagem.total - 1) // por_pagina) + 2) %}
+    <li class="page-item {{ 'active' if p == pagina }}">
+      <a class="page-link"
+         href="{{ url_for('tickets', guild=guild.id, status=status, busca=busca, pagina=p) }}">
+        {{ p }}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}
 {% endblock %}

@@ -1,493 +1,794 @@
-import discord
+"""
+AURA · Provas
+-------------
+Exame de configuração POR SERVIDOR. Tudo que antes era fixo em variavel de
+ambiente (canais, cargo que aprova, número de acertos, tempo por pergunta,
+cooldown e o próprio `OWNER_ID`) agora vem da config da guild, editável pelo
+painel em **Provas**.
+
+Questões: `provas_<guild_id>.json` quando existir, senão `provas.json` da raiz.
+Formato do arquivo:
+
+    {
+      "questoes": [
+        {"id": 1, "pergunta": "...", "alternativas": ["a", "b", "c", "d"],
+         "correta": 2}
+      ]
+    }
+
+Fluxo:
+    /prova iniciar        o membro responde por DM, com tempo por pergunta
+    aprovação            se `require_approval`, o cargo configurado decide
+    /prova criar         cria/edita o questionário em arquivo
+    /prova ver           histórico das tentativas deste servidor
+"""
+
+from __future__ import annotations
+
+import asyncio
 import json
 import os
-import io
 import random
-import asyncio
+import re
+from copy import deepcopy
 from datetime import datetime, timedelta
-from discord.ext import commands
+from typing import Any, Dict, List, Optional
+
+import discord
 from discord import app_commands, ui
-from dotenv import load_dotenv
-from mongo_db import salvar_aprovacao_pendente, get_aprovacao_pendente, deletar_aprovacao_pendente, listar_aprovacoes_pendentes, atualizar_status_aprovacao
+from discord.ext import commands, tasks
 
-# --- CONFIGURAÇÃO DE CANAIS ---
-ID_CANAL_BACKUP = 1460621468152107095   # Canal para enviar o JSON
-ID_CANAL_RELATORIO = 1460621862034997349 # Canal para enviar a análise (Embed)
+import mongo_db
+from core import runtime
+from core import settings as st
 
-# Carrega ID do dono do .env
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
-try:
-    OWNER_ID = int(os.getenv("DONO_ID") or os.getenv("OWNER_ID"))
-except (ValueError, TypeError):
-    OWNER_ID = None
+RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#: Onde ficam os bancos de perguntas por servidor. Fora do Docker é a raiz do
+#: projeto; no Docker, um volume, para não sumir a cada recriação do container.
+PASTA_DADOS = os.getenv("AURA_DATA_DIR") or RAIZ
+os.makedirs(PASTA_DADOS, exist_ok=True)
+ARQUIVO_PADRAO = os.path.join(PASTA_DADOS, "provas.json")
 
-# --- CLASSES DE INTERFACE ---
+#: Banco de perguntas que vem no repositório, usado como semente no primeiro
+#: start. No Docker o volume /app/dados começa vazio, então a cópia precisa vir
+#: da imagem (/app/provas.json) e não do próprio volume.
+SEMENTE = os.path.join(RAIZ, "provas.json")
+
+
+def _garantir_semente() -> None:
+    """Copia o banco inicial para a pasta de dados se ela ainda não tiver um."""
+    if os.path.exists(ARQUIVO_PADRAO) or not os.path.exists(SEMENTE):
+        return
+    try:
+        with open(SEMENTE, "rb") as origem:
+            conteudo = origem.read()
+        with open(ARQUIVO_PADRAO, "wb") as destino:
+            destino.write(conteudo)
+    except Exception as exc:
+        print(f"Aviso: não consegui preparar o banco de perguntas inicial: {exc}")
+
+
+_garantir_semente()
+
+#: O Discord aceita no máximo 5 botões por linha.
+MAX_ALTERNATIVAS = 5
+
+
+def _embaralhar_alternativas(questao: Dict[str, Any]) -> None:
+    """
+    Mistura as alternativas de uma pergunta e remapeia o índice da correta,
+    senão a resposta viraria outra depois da troca.
+    """
+    alternativas = questao.get("alternativas")
+    if not isinstance(alternativas, list) or len(alternativas) < 2:
+        return
+    correta = questao.get("correta")
+    try:
+        correta = int(correta)
+    except (TypeError, ValueError):
+        correta = -1
+    if not 0 <= correta < len(alternativas):
+        return
+    pares = list(enumerate(alternativas))
+    random.shuffle(pares)
+    questao["alternativas"] = [texto for _, texto in pares]
+    questao["correta"] = next(i for i, (original, _) in enumerate(pares)
+                              if original == correta)
+
+
+# ==========================================================================
+# Views
+# ==========================================================================
 
 class IntroView(ui.View):
-    def __init__(self, cog=None, user_id=None, questoes=None, config=None):
+    """Botões de começar/cancelar. Vive na DM, então não é persistente."""
+
+    def __init__(self, cog: "SistemaProva", user_id: str, guild_id: int,
+                 questoes: List[Dict[str, Any]], cfg: Dict[str, Any]):
         super().__init__(timeout=None)
         self.cog = cog
-        self.user_id = user_id
+        self.user_id = str(user_id)
+        self.guild_id = int(guild_id)
         self.questoes = questoes
-        self.config = config
+        self.cfg = cfg
         self.confirmado = False
 
-        btn_iniciar = ui.Button(label="Começar Avaliação", style=discord.ButtonStyle.green, emoji="✅", custom_id=f"prova_iniciar:{user_id}")
-        btn_iniciar.callback = self._confirmar
-        self.add_item(btn_iniciar)
-
-        btn_cancelar = ui.Button(label="Cancelar", style=discord.ButtonStyle.red, emoji="✖️", custom_id=f"prova_cancelar:{user_id}")
-        btn_cancelar.callback = self._cancelar
-        self.add_item(btn_cancelar)
-
-    async def _confirmar(self, interaction: discord.Interaction):
+    @ui.button(label="Começar", style=discord.ButtonStyle.green, emoji="✅")
+    async def _confirmar(self, interaction: discord.Interaction, button: ui.Button):
+        if str(interaction.user.id) != self.user_id:
+            return _nega(interaction, "Esse botão não é seu.")
         self.confirmado = True
-        for child in self.children:
-            child.disabled = True
+        for item in self.children:
+            item.disabled = True
         await interaction.response.edit_message(view=self)
         self.stop()
+        await self.cog._rodar_exame(interaction.user, self.user_id, self.guild_id,
+                                    self.questoes, self.cfg)
 
-        questoes = self.questoes
-        config = self.config
-        if not questoes or not config:
-            dados = get_aprovacao_pendente(self.user_id)
-            if dados:
-                questoes = dados.get("questoes")
-                config = dados.get("config")
-
-        if not questoes or not config:
-            return
-
-        deletar_aprovacao_pendente(self.user_id)
-        await self.cog._run_exam_loop(interaction.channel, interaction.user, self.user_id, questoes, config)
-
-    async def _cancelar(self, interaction: discord.Interaction):
-        self.confirmado = False
-        for child in self.children:
-            child.disabled = True
-        await interaction.response.edit_message(content="❌ Avaliação cancelada.", view=self, embed=None)
-        deletar_aprovacao_pendente(self.user_id)
+    @ui.button(label="Cancelar", style=discord.ButtonStyle.red, emoji="✖️")
+    async def _cancelar(self, interaction: discord.Interaction, button: ui.Button):
+        if str(interaction.user.id) != self.user_id:
+            return _nega(interaction, "Esse botão não é seu.")
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
         self.stop()
+        mongo_db.deletar_aprovacao_pendente(self.user_id, self.guild_id)
+        await interaction.followup.send("Prova cancelada. Sem penalidade.")
+
 
 class ProvaView(ui.View):
-    def __init__(self, questao, total, atual):
-        TEMPO_POR_QUESTAO = 120 # 2 minutos por questão
-        super().__init__(timeout=TEMPO_POR_QUESTAO) 
-        self.value = None
+    """Uma pergunta com as alternativas e o cronômetro."""
+
+    def __init__(self, questao: Dict[str, Any], total: int, atual: int,
+                 segundos: int):
+        super().__init__(timeout=segundos)
         self.questao = questao
-        timestamp_fim = int(datetime.now().timestamp() + TEMPO_POR_QUESTAO)
-        
-        # Mistura as alternativas para não ficarem sempre na mesma ordem
-        alternativas_com_indice = list(enumerate(questao['alternativas']))
-        random.shuffle(alternativas_com_indice)
-        
-        options = []
-        alternativas_texto = []
-        for i, (indice_original, texto) in enumerate(alternativas_com_indice):
-            letra = chr(65 + i) # A, B, C, D...
-            options.append(discord.SelectOption(label=f"{letra}) {texto[:95]}", value=str(indice_original)))
-            alternativas_texto.append(f"**{letra})** {texto}")
+        self.total = total
+        self.atual = atual
+        self.value: Optional[int] = None
+        self.embed = self._montar_embed()
 
-        self.select = discord.ui.Select(placeholder="Selecione a resposta correta...", options=options)
-        self.select.callback = self.callback
-        self.add_item(self.select)
+        for i, texto in enumerate(questao.get("alternativas") or []):
+            self.add_item(_Alternativa(i, str(texto)[:100]))
 
-        self.embed = discord.Embed(
-            title=f"📝 Questão {atual}/{total}",
-            description=f"**{questao['pergunta']}**\n\n⏳ **Tempo restante:** <t:{timestamp_fim}:R>",
-            color=discord.Color.blue()
+    def _montar_embed(self) -> discord.Embed:
+        emb = discord.Embed(
+            title=f"Questão {self.atual}/{self.total}",
+            description=str(self.questao.get("pergunta", ""))[:4000],
+            color=discord.Color.gold(),
         )
-        self.embed.add_field(name="Alternativas", value="\n\n".join(alternativas_texto), inline=False)
-        self.embed.set_footer(text="Selecione a letra correspondente no menu abaixo.")
+        emb.set_footer(text="⏱️ O tempo acaba e a prova é encerrada.")
+        return emb
+
+
+class _Alternativa(ui.Button):
+    def __init__(self, indice: int, texto: str):
+        super().__init__(style=discord.ButtonStyle.secondary, label=texto[:80],
+                         row=indice)
+        self.indice = indice
 
     async def callback(self, interaction: discord.Interaction):
-        self.value = int(self.select.values[0])
-        self.select.disabled = True
-        await interaction.response.defer() # Apenas reconhece, não envia msg nova
-        self.stop()
+        view: ProvaView = self._view  # type: ignore[assignment]
+        view.value = self.indice
+        for item in view.children:
+            item.disabled = True
+        view.stop()
+        await interaction.response.edit_message(view=view)
 
-class OwnerApprovalView(ui.View):
-    def __init__(self, cog, user_id, user=None, dm_channel=None, questoes=None, config=None):
+
+class AprovacaoView(ui.View):
+    """
+    Botões de aprovar/negar, restritos ao cargo de aprovador do servidor.
+
+    A view chega por DM, então `interaction.guild` é `None` e o autor é um
+    `User`, não um `Member`. Por isso o servidor é resolvido pelo ID guardado
+    aqui e as permissões são checadas no membro dentro dele.
+    """
+
+    def __init__(self, cog: "SistemaProva", guild_id: int, user_id: str,
+                 user_name: str, questoes: List[Dict[str, Any]], cfg: Dict[str, Any]):
         super().__init__(timeout=None)
         self.cog = cog
-        self.user_id = user_id
-        self.user = user
-        self.dm_channel = dm_channel
+        self.guild_id = int(guild_id)
+        self.user_id = str(user_id)
+        self.user_name = user_name
         self.questoes = questoes
-        self.config = config
+        self.cfg = cfg
 
-        btn_aprovar = ui.Button(label="Aprovar", style=discord.ButtonStyle.green, emoji="✅", custom_id=f"prova_aprovar:{user_id}")
-        btn_aprovar.callback = self._approve
-        self.add_item(btn_aprovar)
+    @property
+    def guild(self) -> Optional[discord.Guild]:
+        return self.cog.client.get_guild(self.guild_id)
 
-        btn_negar = ui.Button(label="Negar", style=discord.ButtonStyle.red, emoji="✖️", custom_id=f"prova_negar:{user_id}")
-        btn_negar.callback = self._deny
-        self.add_item(btn_negar)
+    @property
+    def guild_nome(self) -> str:
+        guild = self.guild
+        return guild.name if guild is not None else f"Servidor {self.guild_id}"
 
-    async def _approve(self, interaction: discord.Interaction):
-        if interaction.user.id != OWNER_ID:
-            return await interaction.response.send_message("Apenas o dono do bot pode aprovar.", ephemeral=True)
+    async def _pode_decidir(self, interaction: discord.Interaction) -> bool:
+        if st.eh_dono(interaction.user.id):
+            return True
+        guild = self.guild
+        if guild is None:
+            return False
+        membro = guild.get_member(interaction.user.id)
+        if membro is None:
+            return False
+        if membro.guild_permissions.administrator:
+            return True
+        cargo = (self.cfg or {}).get("approval_role_id")
+        if not cargo:
+            return False
+        return any(r.id == int(cargo) for r in membro.roles)
 
-        for child in self.children:
-            child.disabled = True
-        await interaction.response.edit_message(content="✅ **Usuário aprovado!** A prova será iniciada no privado dele.", view=self, embed=None)
+    async def _finaliza(self, interaction: discord.Interaction, aprovado: bool):
+        for item in self.children:
+            item.disabled = True
+        texto = ("✅ Aprovado! Pode iniciar a prova."
+                 if aprovado else "❌ Negado.")
+        await interaction.response.edit_message(view=self, content=texto)
+        mongo_db.deletar_aprovacao_pendente(self.user_id, self.guild_id)
 
-        user = self.user
-        if user is None:
-            try:
-                user = await self.cog.client.fetch_user(int(self.user_id))
-            except:
-                return
+        guild = self.guild
+        try:
+            dm = await interaction.user.create_dm()
+        except discord.Forbidden:
+            dm = None
 
-        dm_channel = self.dm_channel
-        if dm_channel is None:
-            try:
-                dm_channel = await user.create_dm()
-            except:
-                return
-
-        questoes = self.questoes
-        config = self.config
-        if not questoes or not config:
-            dados = get_aprovacao_pendente(self.user_id)
-            if dados:
-                questoes = dados.get("questoes")
-                config = dados.get("config")
-
-        if not questoes or not config:
+        if not aprovado:
+            if dm:
+                await dm.send(f"Sua solicitação de prova no **{self.guild_nome}** "
+                              f"foi **negada**.")
             return
 
-        await dm_channel.send("✅ **Você foi aprovado para realizar a prova de Co-Líder!** Prepare-se, o exame vai começar em instantes...")
-        await self.cog._run_exam(dm_channel, user, self.user_id, questoes, config)
-
-    async def _deny(self, interaction: discord.Interaction):
-        if interaction.user.id != OWNER_ID:
-            return await interaction.response.send_message("Apenas o dono do bot pode negar.", ephemeral=True)
-
-        for child in self.children:
-            child.disabled = True
-        await interaction.response.edit_message(content="❌ **Solicitação negada.**", view=self, embed=None)
-        deletar_aprovacao_pendente(self.user_id)
-
-        user = self.user
-        dm_channel = self.dm_channel
-        if user is None:
+        alvo = guild.get_member(int(self.user_id)) if guild is not None else None
+        if alvo is None:
             try:
-                user = await self.cog.client.fetch_user(int(self.user_id))
-            except:
+                alvo = await self.cog.client.fetch_user(int(self.user_id))
+            except (discord.NotFound, discord.HTTPException):
                 return
-        if dm_channel is None and user:
+        if dm is None:
             try:
-                dm_channel = await user.create_dm()
-            except:
+                dm = await alvo.create_dm()
+            except discord.Forbidden:
                 return
 
-        if dm_channel:
-            await dm_channel.send("❌ Sua solicitação para realizar a prova foi **negada** pela liderança.")
+        view = IntroView(self.cog, self.user_id, self.guild_id, self.questoes, self.cfg)
+        await dm.send(f"✅ Liberação aprovada em **{self.guild_nome}**. "
+                      f"Aperte começar.", view=view)
+        mongo_db.salvar_aprovacao_pendente(
+            self.user_id, self.user_name, self.questoes, self.cfg,
+            status="aguardando_usuario", guild_id=self.guild_id,
+        )
+        self.stop()
 
-# --- CLASSE PRINCIPAL DA COG ---
+    @ui.button(label="Aprovar", style=discord.ButtonStyle.green, emoji="✅")
+    async def _aprovar(self, interaction: discord.Interaction, button: ui.Button):
+        if not await self._pode_decidir(interaction):
+            return _nega(interaction, "Só o cargo de aprovador decide isso.")
+        await self._finaliza(interaction, True)
+
+    @ui.button(label="Negar", style=discord.ButtonStyle.red, emoji="✖️")
+    async def _negar(self, interaction: discord.Interaction, button: ui.Button):
+        if not await self._pode_decidir(interaction):
+            return _nega(interaction, "Só o cargo de aprovador decide isso.")
+        await self._finaliza(interaction, False)
+
+
+def _nega(interaction: discord.Interaction, texto):
+    """Responde com embed ou texto, sem estourar se já respondeu."""
+    extra = {"embed": texto} if isinstance(texto, discord.Embed) else {"content": texto}
+    if interaction.response.is_done():
+        return interaction.followup.send(ephemeral=True, **extra)
+    return interaction.response.send_message(ephemeral=True, **extra)
+
+
+# ==========================================================================
+# Cog
+# ==========================================================================
 
 class SistemaProva(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
-        self.cooldowns = {} 
-        self.questoes_data = {} 
-        self.last_error = None
-        self._restaurar_aprovacoes_pendentes()
+        self._banco: Dict[str, Dict[str, Any]] = {}
+        self._avisos: Dict[str, str] = {}
+        #: Guarda para a retomada de aprovações rodar uma vez só, mesmo com
+        #: o on_ready disparando mais de uma vez (reconexão).
+        self._ja_retomou = False
 
-    def _restaurar_aprovacoes_pendentes(self):
+    # ---------- carga das questões ----------
+
+    def _caminho(self, guild_id: int) -> Optional[str]:
+        """Arquivo de leitura: o do servidor, ou o da raiz como ponto de partida."""
+        especifico = os.path.join(PASTA_DADOS, f"provas_{guild_id}.json")
+        if os.path.exists(especifico):
+            return especifico
+        return ARQUIVO_PADRAO if os.path.exists(ARQUIVO_PADRAO) else None
+
+    def _caminho_de_escrita(self, guild_id: int) -> str:
+        """
+        Onde gravar. Sempre o arquivo do servidor: o `provas.json` da raiz é
+        semente de leitura, e escrever nele misturaria as perguntas de todos os
+        servidores num banco só.
+        """
+        return os.path.join(PASTA_DADOS, f"provas_{int(guild_id)}.json")
+
+    def carregar_provas(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        gid = str(guild_id)
+        if gid in self._banco:
+            return self._banco[gid]
+
+        caminho = self._caminho(int(guild_id))
+        if not caminho:
+            self._avisos[gid] = (
+                "Não achei `provas.json` na raiz do projeto. Crie com `/prova criar`."
+            )
+            return None
+
         try:
-            dados_pendentes = listar_aprovacoes_pendentes()
-            for dados in dados_pendentes:
-                user_id = dados["user_id"]
-                status = dados.get("status", "aguardando_dono")
-                questoes = dados.get("questoes")
-                config = dados.get("config")
+            with open(caminho, encoding="utf-8-sig") as fh:
+                dados = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            self._avisos[gid] = f"Erro ao ler as questões: {exc}"
+            runtime.log("ERRO", f"[provas] {gid}: {exc}", "provas")
+            return None
 
-                if status == "aguardando_usuario":
-                    view = IntroView(cog=self, user_id=user_id, questoes=questoes, config=config)
-                    self.client.add_view(view)
-                    print(f"SistemaProva: IntroView restaurada para user {user_id}")
-                else:
-                    view = OwnerApprovalView(
-                        cog=self,
-                        user_id=user_id,
-                        questoes=questoes,
-                        config=config
-                    )
-                    self.client.add_view(view)
-                    print(f"SistemaProva: OwnerApprovalView restaurada para user {user_id}")
-        except Exception as e:
-            print(f"SistemaProva: Erro ao restaurar aprovações pendentes: {e}")
+        questoes = []
+        vistos = set()
+        for q in dados.get("questoes") or []:
+            alternativas = q.get("alternativas") or []
+            correta = q.get("correta")
+            if len(alternativas) < 2 or not isinstance(correta, int):
+                continue
+            if not 0 <= correta < len(alternativas):
+                continue
+            if q.get("id") in vistos:
+                continue
+            vistos.add(q.get("id"))
+            questoes.append(q)
 
-    async def carregar_provas(self):
-        self.last_error = None
-        try:
-            # Tenta encontrar o arquivo subindo um nível (raiz do bot)
-            caminho_arquivo = os.path.join(os.path.dirname(__file__), '..', 'provas.json')
-            
-            if not os.path.exists(caminho_arquivo):
-                caminho_arquivo = "provas.json" # Tenta na pasta atual
+        if not questoes:
+            self._avisos[gid] = "O arquivo não tem perguntas válidas."
+            return None
 
-            if not os.path.exists(caminho_arquivo):
-                self.last_error = f"Arquivo 'provas.json' não encontrado."
-                print(f"SistemaProva: {self.last_error}")
-                return
-
-            with open(caminho_arquivo, 'r', encoding='utf-8-sig') as f:
-                self.questoes_data = json.load(f)
-            
-            print(f"SistemaProva: Questões carregadas com sucesso!")
-
-        except Exception as e:
-            self.last_error = f"Erro ao carregar JSON: {e}"
-            print(f"SistemaProva: {self.last_error}")
-
-    async def carregar_backup_cooldowns(self):
-        # Tenta recuperar cooldowns de reinícios anteriores via canal de backup (opcional)
-        await self.client.wait_until_ready()
-        try:
-            canal_backup = self.client.get_channel(ID_CANAL_BACKUP)
-            if not canal_backup: return
-            # Procura a última mensagem que tenha anexo de cooldowns
-            async for message in canal_backup.history(limit=5):
-                if message.attachments and message.content.startswith("System_Cooldowns"):
-                    arquivo = await message.attachments[0].read()
-                    self.cooldowns = json.loads(arquivo.decode('utf-8'))
-                    print("SistemaProva: Cooldowns restaurados do backup.")
-                    return
-        except Exception:
-            self.cooldowns = {}
-
-    async def salvar_backup_cooldowns(self):
-        # Salva o estado atual dos cooldowns no canal de backup para persistência
-        try:
-            canal_backup = self.client.get_channel(ID_CANAL_BACKUP)
-            if not canal_backup: return
-            arquivo_memoria = io.StringIO(json.dumps(self.cooldowns, indent=4))
-            arquivo_discord = discord.File(arquivo_memoria, filename="cooldowns_backup.json")
-            await canal_backup.send(content=f"System_Cooldowns - Backup automático - {datetime.now()}", file=arquivo_discord)
-        except Exception:
-            pass
+        self._avisos.pop(gid, None)
+        self._banco[gid] = {"questoes": questoes}
+        return self._banco[gid]
 
     @commands.Cog.listener()
     async def on_ready(self):
-        await self.carregar_provas()
-        await self.carregar_backup_cooldowns()
-
-    @app_commands.command(name="iniciar-prova", description="Inicia o teste para Co-Líder.")
-    async def iniciar_prova(self, interaction: discord.Interaction):
-
-        # 1. CARREGAMENTO DAS QUESTÕES
-        if not self.questoes_data:
-            await self.carregar_provas()
-            if not self.questoes_data:
-                await interaction.response.send_message("🚨 Erro interno: Não foi possível carregar a prova. Contate o desenvolvedor.", ephemeral=True)
-                return
-
-        # 2. VERIFICAÇÃO DE COOLDOWN (REPROVAÇÃO RECENTE)
-        user_id = str(interaction.user.id)
-        if user_id in self.cooldowns:
-            data_liberacao = datetime.fromisoformat(self.cooldowns[user_id])
-            if datetime.now() < data_liberacao:
-                ts = int(data_liberacao.timestamp())
-                await interaction.response.send_message(f"❌ Você realizou uma prova recentemente. Tente novamente <t:{ts}:R>.", ephemeral=True)
-                return
-
-        config = self.questoes_data['config']
-        todas_questoes = self.questoes_data['questoes']
-
-        # Remove duplicatas por id (mantém a primeira ocorrência)
-        ids_vistos = set()
-        questoes_unicas = []
-        for q in todas_questoes:
-            qid = q.get("id")
-            if qid not in ids_vistos:
-                ids_vistos.add(qid)
-                questoes_unicas.append(q)
-
-        qtd_questoes = config.get('total_questoes_aplicadas', 10)
-        if len(questoes_unicas) < qtd_questoes:
-            questoes_selecionadas = questoes_unicas
-        else:
-            questoes_selecionadas = random.sample(questoes_unicas, qtd_questoes)
-
-        # 3. CRIAÇÃO DA DM
+        runtime.log("INFO", f"Provas: {len(self.client.guilds)} servidor(es) online.", "provas")
+        # Os botões vivem na DM e morrem com o processo. Quem ficou esperando
+        # aprovação precisa receber o pedido de novo, senão a solicitação
+        # travava no banco até o membro desistir.
+        if self._ja_retomou:
+            return
+        self._ja_retomou = True
         try:
-            dm_channel = await interaction.user.create_dm()
-        except discord.Forbidden:
-            await interaction.response.send_message("❌ Não consegui enviar DM. Habilite mensagens diretas no servidor.", ephemeral=True)
-            return
+            await self._retomar_aprovacoes()
+        except Exception as exc:
+            runtime.log("ERRO", f"[provas] falha ao retomar aprovações: {exc}", "provas")
 
-        # 4. APROVAÇÃO DO DONO (VIA DM)
-        if OWNER_ID:
+    async def _retomar_aprovacoes(self) -> int:
+        """
+        Reenvia o pedido de aprovação de quem ficou pendente antes do restart.
+
+        Só o caminho `aguardando_aprovador` volta: no outro a DM já tinha sido
+        aberta, e o botão do examineando também morreu com o processo — aí o
+        registro é apagado para o pedido não ficar preso para sempre.
+        """
+        retomadas = 0
+        for registro in mongo_db.listar_aprovacoes_pendentes(incluir_questoes=True):
+            guild_id = registro.get("guild_id")
+            if registro.get("status") != "aguardando_aprovador":
+                # A DM já tinha sido aberta e o botão do examineando morreu com
+                # o processo; apagar o registro deixa o pedido reinscritível.
+                mongo_db.deletar_aprovacao_pendente(registro.get("user_id"), guild_id)
+                continue
+            guild_id = registro.get("guild_id")
+            guild = self.client.get_guild(int(guild_id)) if guild_id else None
+            questoes = registro.get("questoes") or []
+            bloco = registro.get("config") or {}
+            if guild is None or not questoes or not bloco:
+                # Não dá para reabrir: limpa para o registro não ficar eterno.
+                mongo_db.deletar_aprovacao_pendente(
+                    registro.get("user_id"), guild_id)
+                continue
+
+            membro = guild.get_member(int(registro["user_id"]))
+            if membro is None:
+                mongo_db.deletar_aprovacao_pendente(
+                    registro.get("user_id"), guild_id)
+                continue
+
             try:
-                owner = await self.client.fetch_user(OWNER_ID)
-            except (discord.NotFound, discord.HTTPException):
-                owner = None
+                avisados = await self._avisar_aprovadores(
+                    guild, bloco, membro, questoes, registro["user_id"])
+            except Exception as exc:
+                runtime.log("ERRO", f"[provas] falha ao retomar aprovação: {exc}", "provas")
+                continue
+            if avisados:
+                retomadas += 1
+            else:
+                mongo_db.deletar_aprovacao_pendente(
+                    registro.get("user_id"), guild_id)
 
-            if owner:
-                embed_owner = discord.Embed(
-                    title="📋 Solicitação de Prova - Co-Líder",
-                    description=f"{interaction.user.mention} está solicitando acesso à prova.",
-                    color=discord.Color.blue()
+        if retomadas:
+            runtime.log(
+                "INFO", f"Provas: {retomadas} aprovação(ões) reenviada(s).", "provas")
+        return retomadas
+
+    # ---------- comandos ----------
+
+    prova = app_commands.Group(
+        name="prova",
+        description="Exame de qualificação.",
+        guild_only=True,
+    )
+
+    @prova.command(name="iniciar", description="Começa o exame deste servidor.")
+    async def prova_iniciar(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        if not st.module_enabled(cfg, "provas"):
+            return _nega(interaction, "O módulo de provas está desligado neste servidor.")
+
+        bloco = cfg.get("provas") or {}
+        banco = self.carregar_provas(guild.id)
+        if not banco:
+            return _nega(interaction, self._avisos.get(str(guild.id),
+                                                        "Prova sem perguntas."))
+        if interaction.user.bot:
+            return _nega(interaction, "Bots não fazem prova.")
+
+        gid = str(guild.id)
+        uid = str(interaction.user.id)
+
+        liberar = mongo_db.get_cooldown(uid, gid)
+        if liberar and liberar > datetime.now():
+            return _nega(interaction,
+                         f"Você já fez a prova recentemente. Tente <t:{int(liberar.timestamp())}:R>.")
+
+        total = max(1, min(len(banco["questoes"]), int(bloco.get("pass_score") or 1) * 2))
+        questoes = list(banco["questoes"])
+        random.shuffle(questoes)
+        # Cópia profunda: embaralhar não pode mexer no banco em cache.
+        selecionadas = deepcopy(questoes[:total])
+        if bloco.get("shuffle_answers", True):
+            for q in selecionadas:
+                _embaralhar_alternativas(q)
+
+        try:
+            dm = await interaction.user.create_dm()
+        except discord.Forbidden:
+            return _nega(interaction, "Não consegui abrir DM. Libere mensagens "
+                                      "diretas do servidor para mim.")
+
+        if bloco.get("require_approval", True):
+            avisados = await self._avisar_aprovadores(
+                guild, bloco, interaction.user, selecionadas, uid)
+            if avisados:
+                mongo_db.salvar_aprovacao_pendente(
+                    uid, str(interaction.user), selecionadas, bloco,
+                    status="aguardando_aprovador", guild_id=gid,
                 )
-                embed_owner.set_thumbnail(url=interaction.user.display_avatar.url)
-                embed_owner.add_field(name="Usuário", value=f"{interaction.user} (`{interaction.user.id}`)", inline=False)
-                embed_owner.add_field(name="Servidor", value=f"{interaction.guild.name} (`{interaction.guild.id}`)", inline=False)
-                embed_owner.add_field(name="Conta criada", value=f"📅 <t:{int(interaction.user.created_at.timestamp())}:R>", inline=True)
-                embed_owner.add_field(name="Ingressou aqui", value=f"📅 <t:{int(interaction.user.joined_at.timestamp())}:R>", inline=True)
+                return _nega(interaction,
+                             "📩 Sua solicitação foi enviada para aprovação. "
+                             "Aguarde o contato no privado.")
+            mongo_db.salvar_aprovacao_pendente(
+                uid, str(interaction.user), selecionadas, bloco,
+                status="aguardando_usuario", guild_id=gid,
+            )
+        else:
+            mongo_db.salvar_aprovacao_pendente(
+                uid, str(interaction.user), selecionadas, bloco,
+                status="aguardando_usuario", guild_id=gid,
+            )
 
-                cargos = [r.mention for r in interaction.user.roles if r.name != '@everyone']
-                if cargos:
-                    embed_owner.add_field(name="Cargos", value=" | ".join(cargos[:8]), inline=False)
+        await self._abrir_intro(dm, interaction.user, uid, guild.id, selecionadas, bloco)
 
-                view_aprovar = OwnerApprovalView(self, user_id, interaction.user, dm_channel, questoes_selecionadas, config)
-                await owner.send(embed=embed_owner, view=view_aprovar)
-                salvar_aprovacao_pendente(user_id, str(interaction.user), questoes_selecionadas, config)
-                await interaction.response.send_message("📩 Sua solicitação foi enviada para a liderança aprovar. **Aguarde o contato no privado!**", ephemeral=True)
-                return
+    async def _abrir_intro(self, dm, user, uid: str, guild_id: int,
+                           questoes: List[Dict[str, Any]], bloco: Dict[str, Any]):
+        guild = self.client.get_guild(guild_id)
+        titulo = bloco.get("title") or "Exame de Qualificação"
+        banco = (bloco.get("bank_name") or "").strip()
+        segundos = int(bloco.get("time_per_question") or 120)
+        precisa = int(bloco.get("pass_score") or 1)
 
-        # 5. Se não tem OWNER_ID configurado, inicia direto
-        salvar_aprovacao_pendente(user_id, str(interaction.user), questoes_selecionadas, config, status="aguardando_usuario")
-        await self._run_exam(dm_channel, interaction.user, user_id, questoes_selecionadas, config)
-
-    async def _run_exam(self, dm_channel, user, user_id, questoes_selecionadas, config):
-        """Envia o embed introdutório e aguarda o usuário iniciar a prova."""
-        embed_intro = discord.Embed(
-            title="🛡️ Exame de Qualificação: Co-Líder B.A.D",
-            description=f"Olá, {user.mention}! Bem-vindo ao exame para **Co-Líder** do clã **B.A.D**.\n\n"
-                        f"Este teste avalia seu conhecimento sobre as regras, filosofia e protocolos do clã. "
-                        f"Você será aprovado se acertar **{config['acertos_para_aprovar']} de {len(questoes_selecionadas)} questões**.",
-            color=discord.Color.gold()
+        emb = discord.Embed(
+            title=f"🛡️ {titulo}" + (f" · {banco}" if banco else ""),
+            description=(
+                f"Olá, {user.mention}! Este exame é do servidor "
+                f"**{guild.name if guild else guild_id}**.\n\n"
+                f"São **{len(questoes)}** perguntas, **{segundos}s** cada. "
+                f"Precisa de **{precisa} acertos** para passar."
+            ),
+            color=discord.Color.gold(),
         )
-        embed_intro.add_field(name="🔢 Questões", value=f"**{len(questoes_selecionadas)}** questões sorteadas de um total de **{len(self.questoes_data['questoes'])}**.", inline=True)
-        embed_intro.add_field(name="⏱️ Limite", value="**2 minutos** por questão (se esgotar, a prova é encerrada).", inline=True)
-        embed_intro.add_field(name="🔒 Sigilo", value="Cada pergunta é **apagada** após respondida para evitar cola.", inline=False)
-        embed_intro.add_field(name="📊 Conteúdo", value="• **Filosofia e Conduta** (Promoções, Hierarquia)\n• **Protocolos de Guerra** (Guerras, CWL)\n• **Gestão do Clã** (Doações, Eventos)\n• **Códigos MR** (Penalidades)", inline=False)
+        view = IntroView(self, uid, guild_id, questoes, bloco)
+        await dm.send(embed=emb, view=view)
 
-        atualizar_status_aprovacao(user_id, "aguardando_usuario")
+    async def _avisar_aprovadores(self, guild: discord.Guild, bloco: Dict[str, Any],
+                                  membro: discord.Member,
+                                  questoes: List[Dict[str, Any]],
+                                  uid: str) -> bool:
+        cargo_id = bloco.get("approval_role_id")
+        cargo = guild.get_role(int(cargo_id)) if cargo_id else None
+        alvos = list(cargo.members) if cargo else []
+        alvos = [m for m in alvos if m.id != membro.id]
 
-        view_intro = IntroView(self, user_id, questoes_selecionadas, config)
-        await dm_channel.send(embed=embed_intro, view=view_intro)
+        canal = guild.get_channel(bloco["notify_channel_id"]) if bloco.get("notify_channel_id") else None
 
-        await view_intro.wait()
-        if not view_intro.confirmado:
-            deletar_aprovacao_pendente(user_id)
+        if not alvos:
+            destino = guild.owner
+            if destino and destino.id != membro.id:
+                alvos = [destino]
+        if not alvos:
+            return False
+
+        emb = discord.Embed(
+            title="📋 Solicitação de prova",
+            description=f"{membro.mention} quer fazer o exame deste servidor.",
+            color=discord.Color.blurple(),
+        )
+        emb.add_field(name="Membro", value=f"{membro} (`{membro.id}`)", inline=False)
+        emb.add_field(name="Servidor", value=f"{guild.name} (`{guild.id}`)", inline=False)
+        emb.add_field(name="Conta criada",
+                      value=f"<t:{int(membro.created_at.timestamp())}:R>", inline=True)
+        emb.add_field(name="Entrou aqui",
+                      value=f"<t:{int(membro.joined_at.timestamp())}:R>" if membro.joined_at else "—",
+                      inline=True)
+
+        view = AprovacaoView(self, guild.id, uid, str(membro), questoes, bloco)
+        enviados = 0
+        for alvo in alvos:
+            try:
+                await alvo.send(embed=emb, view=view)
+                enviados += 1
+            except (discord.Forbidden, discord.HTTPException):
+                continue
+        if canal is not None:
+            await canal.send(embed=emb)
+        return enviados > 0
+
+    @prova.command(name="criar", description="Cria o arquivo de questões deste servidor.")
+    @app_commands.describe(
+        pergunta="Texto da pergunta",
+        alternativas="Opções separadas por |",
+        correta="Índice da alternativa certa, começando em 0",
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    async def prova_criar(self, interaction: discord.Interaction,
+                          pergunta: str, alternativas: str, correta: int):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        if not st.eh_dono(interaction.user.id, cfg) and \
+                not interaction.user.guild_permissions.manage_guild:
+            return _nega(interaction, "Só manageguild ou dono do AURA.")
+
+        opcoes = [a.strip() for a in alternativas.split("|") if a.strip()]
+        if len(opcoes) < 2:
+            return _nega(interaction, "Preciso de pelo menos duas alternativas.")
+        if len(opcoes) > MAX_ALTERNATIVAS:
+            return _nega(
+                interaction,
+                f"Máximo de {MAX_ALTERNATIVAS} alternativas por pergunta "
+                f"(recebi {len(opcoes)}). Separe por `|`.")
+        if not 0 <= correta < len(opcoes):
+            return _nega(interaction, f"A alternativa correta vai de 0 a {len(opcoes) - 1}.")
+
+        # Sempre no arquivo deste servidor, mesmo lendo a semente da raiz.
+        caminho = self._caminho_de_escrita(guild.id)
+
+        dados = {"questoes": []}
+        if os.path.exists(caminho):
+            try:
+                with open(caminho, encoding="utf-8-sig") as fh:
+                    dados = json.load(fh)
+            except (OSError, json.JSONDecodeError):
+                dados = {"questoes": []}
+        dados.setdefault("questoes", [])
+
+        novo_id = max([int(q.get("id") or 0) for q in dados["questoes"]] + [0]) + 1
+        dados["questoes"].append({
+            "id": novo_id,
+            "pergunta": pergunta[:1000],
+            "alternativas": opcoes,
+            "correta": int(correta),
+        })
+
+        try:
+            with open(caminho, "w", encoding="utf-8") as fh:
+                json.dump(dados, fh, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            return _nega(interaction, f"Não consegui gravar: {exc}")
+
+        self._banco.pop(str(guild.id), None)
+        self.carregar_provas(guild.id)
+        mongo_db.registrar_auditoria(
+            guild.id, guild.name, "prova_criada", "provas",
+            str(interaction.user), f"pergunta {novo_id}",
+        )
+        await _nega(interaction, f"✅ Pergunta {novo_id} salva. Total: "
+                                 f"{len(dados['questoes'])}.")
+
+    @prova.command(name="ver", description="Mostra as perguntas deste servidor.")
+    async def prova_ver(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        if not st.eh_dono(interaction.user.id, cfg) and \
+                not interaction.user.guild_permissions.manage_guild:
+            return _nega(interaction, "Só manageguild ou dono do AURA.")
+
+        banco = self.carregar_provas(guild.id)
+        if not banco:
+            return _nega(interaction, self._avisos.get(str(guild.id), "Sem questões."))
+
+        linhas = []
+        for q in banco["questoes"][:25]:
+            alternativas = " | ".join(
+                f"{'✅' if i == q.get('correta') else '❌'} {a[:30]}"
+                for i, a in enumerate(q.get("alternativas") or [])
+            )
+            linhas.append(f"**{q.get('id')}.** {str(q.get('pergunta'))[:120]}\n{alternativas}")
+
+        await _nega(interaction, discord.Embed(
+            title=f"📚 {len(banco['questoes'])} pergunta(s)",
+            description=("\n\n".join(linhas) or "vazio")[:3900],
+            color=discord.Color.blurple(),
+        ))
+
+    @prova.command(name="apagar", description="Remove uma pergunta deste servidor.")
+    @app_commands.describe(numero="ID da pergunta, como mostra /prova ver")
+    @app_commands.default_permissions(manage_guild=True)
+    async def prova_apagar(self, interaction: discord.Interaction, numero: int):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        if not st.eh_dono(interaction.user.id, cfg) and \
+                not interaction.user.guild_permissions.manage_guild:
+            return _nega(interaction, "Só manageguild ou dono do AURA.")
+
+        banco = self.carregar_provas(guild.id)
+        if not banco:
+            return _nega(interaction, self._avisos.get(str(guild.id), "Sem questões."))
+
+        caminho = self._caminho_de_escrita(guild.id)
+        antes = len(banco["questoes"])
+        banco["questoes"] = [q for q in banco["questoes"] if int(q.get("id") or 0) != numero]
+
+        if len(banco["questoes"]) == antes:
+            return _nega(interaction, f"Não achei a pergunta {numero}.")
+        if not banco["questoes"]:
+            self._banco.pop(str(guild.id), None)
+            return _nega(interaction, "Era a última. Apague o arquivo se quiser recomeçar.")
+
+        if caminho:
+            try:
+                with open(caminho, "w", encoding="utf-8") as fh:
+                    json.dump({"questoes": banco["questoes"]}, fh,
+                              ensure_ascii=False, indent=2)
+            except OSError as exc:
+                return _nega(interaction, f"Não consegui gravar: {exc}")
+
+        self._banco.pop(str(guild.id), None)
+        mongo_db.registrar_auditoria(
+            guild.id, guild.name, "prova_apagada", "provas",
+            str(interaction.user), f"pergunta {numero}",
+        )
+        await _nega(interaction, f"🗑️ Pergunta {numero} removida.")
+
+    # ---------- execução ----------
+
+    async def _rodar_exame(self, user: discord.abc.User, uid: str, guild_id: int,
+                           questoes: List[Dict[str, Any]], bloco: Dict[str, Any]):
+        guild = self.client.get_guild(guild_id)
+        segundos = int(bloco.get("time_per_question") or 120)
+
+        try:
+            dm = await user.create_dm()
+        except discord.Forbidden:
             return
 
-    async def _run_exam_loop(self, dm_channel, user, user_id, questoes_selecionadas, config):
-        """Executa o loop de questões da prova."""
-        acertos = 0
-        respostas_detalhadas = []
-
-        msg_inicio = await dm_channel.send("🚀 **A prova vai começar em 3 segundos...**")
+        aviso = await dm.send("🚀 A prova começa em 3 segundos…")
         await asyncio.sleep(3)
         try:
-            await msg_inicio.delete()
-        except:
+            await aviso.delete()
+        except discord.HTTPException:
             pass
 
-        # --- LOOP DE QUESTÕES ---
-        for i, questao in enumerate(questoes_selecionadas):
-            view = ProvaView(questao, len(questoes_selecionadas), i + 1)
-            msg_pergunta = await dm_channel.send(embed=view.embed, view=view)
-            await view.wait()
+        acertos = 0
+        respostas: List[Dict[str, Any]] = []
 
+        for i, questao in enumerate(questoes, start=1):
+            view = ProvaView(questao, len(questoes), i, segundos)
+            msg = await dm.send(embed=view.embed, view=view)
             try:
-                await msg_pergunta.delete()
-            except Exception:
+                await view.wait()
+            except asyncio.TimeoutError:
+                view.stop()
+            try:
+                await msg.delete()
+            except discord.HTTPException:
                 pass
 
             if view.value is None:
-                await dm_channel.send("❌ **Tempo Esgotado!** Prova encerrada automaticamente.")
-                self.cooldowns[user_id] = (datetime.now() + timedelta(minutes=30)).isoformat()
-                await self.salvar_backup_cooldowns()
+                await dm.send("⏱️ Tempo esgotado. Prova encerrada, sem penalidade.")
+                mongo_db.deletar_aprovacao_pendente(uid, guild_id)
                 return
 
-            alternativa_escolhida = questao['alternativas'][view.value]
-            alternativa_correta = questao['alternativas'][questao['correta']]
-
-            dados_resposta = {
-                "id": questao['id'],
-                "pergunta": questao['pergunta'],
-                "escolhida": alternativa_escolhida,
-                "correta": alternativa_correta,
-                "acertou": False
-            }
-
-            if view.value == questao['correta']:
+            alternativas = questao["alternativas"]
+            acertou = view.value == questao["correta"]
+            if acertou:
                 acertos += 1
-                dados_resposta["acertou"] = True
+            respostas.append({
+                "id": questao.get("id"),
+                "pergunta": str(questao.get("pergunta", ""))[:500],
+                "escolhida": alternativas[view.value],
+                "correta": alternativas[questao["correta"]],
+                "acertou": acertou,
+            })
 
-            respostas_detalhadas.append(dados_resposta)
+        passou = acertos >= int(bloco.get("pass_score") or 1)
+        mongo_db.salvar_prova(user.id, str(user), acertos, len(questoes), passou,
+                              respostas, guild_id=guild_id,
+                              guild_name=guild.name if guild else None)
+        mongo_db.registrar_auditoria(
+            guild_id, guild.name if guild else str(guild_id), "prova_finalizada",
+            "provas", str(user), f"{acertos}/{len(questoes)} "
+                                  f"{'aprovado' if passou else 'reprovado'}",
+        )
+        mongo_db.deletar_aprovacao_pendente(uid, guild_id)
 
-        # --- RESULTADO ---
-        passou = acertos >= config['acertos_para_aprovar']
-        cor = discord.Color.green() if passou else discord.Color.red()
+        emb = discord.Embed(
+            title="✅ Prova finalizada" if passou else "❌ Prova finalizada",
+            description=(
+                f"Nota: **{acertos}/{len(questoes)}**.\n"
+                + (f"Resultado registrado em **{guild.name}**."
+                   if guild else "Resultado registrado.")
+            ),
+            color=discord.Color.green() if passou else discord.Color.red(),
+        )
+        await dm.send(embed=emb)
 
         if not passou:
-            dias = config.get('tempo_cooldown_dias', 3)
-            self.cooldowns[user_id] = (datetime.now() + timedelta(days=dias)).isoformat()
-            await self.salvar_backup_cooldowns()
+            dias = int(bloco.get("cooldown_days") or 0)
+            if dias > 0:
+                mongo_db.set_cooldown(uid, str(guild_id), dias)
+                await dm.send(f"Você pode tentar de novo em **{dias} dia(s)**.")
 
-        embed_fim = discord.Embed(
-            title="✅ Prova Finalizada",
-            description="Suas respostas foram enviadas para o nosso sistema.\n\n**Aguarde!** Um administrador analisará seu desempenho e entrará em contato em breve com o resultado oficial.",
-            color=discord.Color.blue()
+        await self._mandar_relatorio(guild, bloco, user, acertos, len(questoes),
+                                     passou, respostas)
+
+    async def _mandar_relatorio(self, guild: Optional[discord.Guild],
+                                bloco: Dict[str, Any], user, acertos: int,
+                                total: int, passou: bool,
+                                respostas: List[Dict[str, Any]]) -> None:
+        if guild is None:
+            return
+        canal = guild.get_channel(bloco["backup_channel_id"]) if bloco.get("backup_channel_id") else None
+        if canal is None:
+            return
+
+        emb = discord.Embed(
+            title=f"📑 Prova de {user}",
+            color=discord.Color.green() if passou else discord.Color.red(),
         )
-        await dm_channel.send(embed=embed_fim)
+        emb.add_field(name="Nota", value=f"**{acertos}/{total}**", inline=True)
+        emb.add_field(name="Resultado",
+                      value="🟢 aprovado" if passou else "🔴 reprovado", inline=True)
+        erros = [r for r in respostas if not r["acertou"]]
+        if erros:
+            texto = "\n".join(
+                f"**{r['pergunta'][:80]}**\n❌ {r['escolhida'][:40]} · ✅ {r['correta'][:40]}"
+                for r in erros[:6]
+            )
+            emb.add_field(name="Erros", value=texto[:1000], inline=False)
 
-        # --- RELATÓRIOS ---
-        canal_relatorio = self.client.get_channel(ID_CANAL_RELATORIO)
-        if canal_relatorio:
-            embed_admin = discord.Embed(title=f"📑 Avaliação: {user.name}", color=cor)
-            embed_admin.set_thumbnail(url=user.display_avatar.url)
-            embed_admin.add_field(name="Usuário", value=f"{user.mention} (`{user.id}`)", inline=True)
-            embed_admin.add_field(name="Nota", value=f"**{acertos}/{len(questoes_selecionadas)}**", inline=True)
-            embed_admin.add_field(name="Resultado Automático", value="🟢 APROVADO" if passou else "🔴 REPROVADO", inline=True)
-            embed_admin.set_footer(text=f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-
-            erros = [r for r in respostas_detalhadas if not r['acertou']]
-            if erros:
-                texto_erros = ""
-                contador_campo = 1
-                for erro in erros:
-                    bloco = f"**Q:** {erro['pergunta']}\n❌ {erro['escolhida']}\n✅ {erro['correta']}\n\n"
-                    if len(texto_erros) + len(bloco) > 1000:
-                        embed_admin.add_field(name=f"❌ Erros (Parte {contador_campo})", value=texto_erros, inline=False)
-                        texto_erros = bloco
-                        contador_campo += 1
-                    else:
-                        texto_erros += bloco
-                if texto_erros:
-                    embed_admin.add_field(name=f"❌ Erros (Parte {contador_campo})", value=texto_erros, inline=False)
-            else:
-                embed_admin.add_field(name="Desempenho", value="🏆 Gabaritou a prova!", inline=False)
-
-            await canal_relatorio.send(embed=embed_admin)
-
-        canal_backup = self.client.get_channel(ID_CANAL_BACKUP)
-        if canal_backup:
-            dados_backup = {
-                "user_tag": user.name,
-                "user_id": user.id,
-                "data": datetime.now().isoformat(),
-                "nota": acertos,
-                "total": len(questoes_selecionadas),
-                "aprovado_sistema": passou,
-                "respostas": respostas_detalhadas
-            }
-            arquivo_memoria = io.StringIO(json.dumps(dados_backup, indent=4, ensure_ascii=False))
-            arquivo_anexo = discord.File(arquivo_memoria, filename=f"prova_{user.name}_{int(datetime.now().timestamp())}.json")
-            await canal_backup.send(content=f"💾 **Backup de Prova:** {user.mention}", file=arquivo_anexo)
-
-        # Salva no MongoDB (painel web)
         try:
-            from mongo_db import salvar_prova
-            salvar_prova(user.id, user.name, acertos, len(questoes_selecionadas), passou, respostas_detalhadas)
-        except Exception:
+            await canal.send(embed=emb)
+        except (discord.Forbidden, discord.HTTPException):
             pass
 
-async def setup(client: commands.Bot):
+
+async def setup(client: commands.Bot) -> None:
     await client.add_cog(SistemaProva(client))

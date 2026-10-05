@@ -1,114 +1,190 @@
-import discord
-import os
+"""
+AURA · Autorole
+---------------
+Liberação de acesso por palavra-chave, configurada POR SERVIDOR.
+
+O painel define: canal de registro, palavra (padrão "liberar"), cargo a dar,
+cargo que bloqueia e mensagem de boas-vindas. Antes valia um .env global, que
+não funciona quando o AURA atende vários servidores.
+"""
+
+from __future__ import annotations
+
 import asyncio
+from typing import Any, Dict
+
+import discord
+from discord import app_commands
 from discord.ext import commands
-from dotenv import load_dotenv
 
-# Carrega as variáveis de ambiente do arquivo .env na raiz do projeto
-# O '..' sobe um nível de diretório para encontrar o .env
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+import mongo_db
+from core import runtime
+from core import settings as st
+from core.placeholders import render
 
-# Tenta carregar os IDs do arquivo .env
-config_valida = False
-try:
-    CANAL_REGISTRO_ID = int(os.getenv("CANAL_REGISTRO_ID"))
-    CARGO_MEMBRO_ID = int(os.getenv("CARGO_MEMBRO_ID"))
-    CARGO_BANIDO_ID = int(os.getenv("CARGO_BANIDO_ID"))
-    
-    # Verifica se todos os IDs foram carregados
-    if all([CANAL_REGISTRO_ID, CARGO_MEMBRO_ID, CARGO_BANIDO_ID]):
-        config_valida = True
-    else:
-        raise ValueError("Uma ou mais variáveis de ambiente do autorole não foram encontradas.")
 
-except (ValueError, TypeError):
-    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-    print("!!! AVISO CRÍTICO: IDs para o Autorole não foram configurados no .env.      !!!")
-    print("!!! O cog de autorole não funcionará corretamente.                           !!!")
-    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+def _config_pronta(ar: Dict[str, Any]) -> bool:
+    return bool(ar.get("channel_id") and ar.get("give_role_id"))
 
-# Início da classe da Cog
+
 class Autorole(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
 
     @commands.Cog.listener()
     async def on_ready(self):
-        """Evento que é acionado quando a Cog está pronta."""
-        print("Cog Autorole carregado.")
-        if not config_valida:
-            print("-> AVISO: O Cog Autorole foi carregado, mas está desativado por falta de configuração no arquivo .env.")
+        runtime.log("INFO", "Autorole carregado (config por servidor)", "autorole")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """Evento que é acionado a cada mensagem enviada no servidor."""
-        # Ignora a verificação se a configuração for inválida ou se a mensagem for de um bot
-        if not config_valida or message.author.bot:
+        if message.author.bot or message.guild is None:
             return
 
-        # Verifica se a mensagem foi enviada no canal correto e tem o conteúdo esperado
-        if message.channel.id == CANAL_REGISTRO_ID and message.content.lower() == "liberar":
-            membro = message.author
-            guild = message.guild
+        guild = message.guild
+        try:
+            cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        except Exception as exc:
+            runtime.log("ERRO", f"autorole: config: {exc}", "autorole")
+            return
 
-            # Busca os objetos de cargo no servidor pelos IDs
-            cargo_membro = guild.get_role(CARGO_MEMBRO_ID)
-            cargo_banido = guild.get_role(CARGO_BANIDO_ID)
+        if not st.module_enabled(cfg, "autorole"):
+            return
 
-            if not cargo_membro or not cargo_banido:
-                print(f"ERRO AUTOROLE: O cargo de membro (ID: {CARGO_MEMBRO_ID}) ou de banido (ID: {CARGO_BANIDO_ID}) não foi encontrado no servidor '{guild.name}'.")
+        ar = cfg.get("autorole") or {}
+        if not ar.get("enabled") or not _config_pronta(ar):
+            return
+
+        if message.channel.id != ar.get("channel_id"):
+            return
+
+        palavra = (ar.get("keyword") or "liberar").strip().lower()
+        if message.content.strip().lower() != palavra:
+            return
+
+        membro = message.author
+        cargo_bloqueio = ar.get("deny_role_id")
+        cargo_entrada = ar.get("give_role_id")
+
+        try:
+            if cargo_bloqueio and discord.utils.get(membro.roles, id=cargo_bloqueio):
+                await message.add_reaction("❌")
+                await message.reply(
+                    "Você está bloqueado e não pode ser liberado. Fale com a administração.",
+                    delete_after=30)
                 return
 
-            if cargo_banido in membro.roles:
-                print(f"Autorole ignorado para '{membro.name}' pois possui o cargo '{cargo_banido.name}'.")
-                try:
-                    await message.add_reaction("❌")
-                except discord.Forbidden:
-                    print("AVISO: Não tenho permissão para adicionar reações no canal de registro.")
-                return
-
-            if cargo_membro not in membro.roles:
-                try:
-                    # Ação 1: Adicionar o cargo (crítico)
-                    await membro.add_roles(cargo_membro, reason="Autorole por palavra-chave 'Liberar'.")
-                    print(f"Cargo '{cargo_membro.name}' adicionado para {membro.name}.")
-                    
-                    # Ação 2: Reagir para dar feedback imediato (Como solicitado)
-                    await message.add_reaction("✅") # Este é o :white_check_mark:
-
-                except discord.Forbidden:
-                    print(f"ERRO DE PERMISSÃO: Não foi possível adicionar o cargo '{cargo_membro.name}' para {membro.name} OU reagir à mensagem.")
-                    try:
-                        await message.add_reaction("⚠️")
-                    except discord.Forbidden:
-                        pass # Ignora se não conseguir reagir
-                    return # Para a execução aqui
-                except discord.HTTPException as e:
-                    print(f"ERRO HTTP ao adicionar cargo ou reagir: {e}")
-                    await message.add_reaction("⚠️")
-                    return
-
-                # Ação 3: Enviar a mensagem de boas-vindas (Como solicitado)
-                try:
-                    async with message.channel.typing():
-                        await asyncio.sleep(1.0) # Tempo de digitação reduzido
-                    
-                    # --- MENSAGEM MELHORADA AQUI ---
-                    mensagem_boas_vindas = await message.channel.send(f"✅ Acesso liberado, {membro.mention}! Seu registro foi validado e as portas do clã estão abertas. Seja bem-vindo(a)!")
-                    
-                    # Tempo de exclusão da mensagem alterado para 5 minutos
-                    await asyncio.sleep(300) 
-                    await mensagem_boas_vindas.delete()
-                
-                except discord.Forbidden:
-                    print(f"ERRO DE PERMISSÃO: Não tenho permissão para ENVIAR ou APAGAR mensagens no canal '{message.channel.name}'. Verifique as permissões do bot.")
-                except Exception as e:
-                    print(f"ERRO inesperado ao enviar/apagar a mensagem de boas-vindas: {e}")
-            else:
-                # Se o membro já tinha o cargo, apenas reage para confirmar que viu
+            if cargo_entrada and discord.utils.get(membro.roles, id=cargo_entrada):
                 await message.add_reaction("👍")
+                await message.reply("Você já está liberado.", delete_after=15)
+                return
+
+            cargo = guild.get_role(cargo_entrada) if cargo_entrada else None
+            if cargo is None:
+                await message.add_reaction("⚠️")
+                runtime.log("ERRO", f"cargo de entrada {cargo_entrada} não existe em "
+                                     f"{guild.name}", "autorole")
+                return
+
+            await membro.add_roles(cargo, reason=f"AURA autorole: {palavra}")
+            await message.add_reaction("✅")
+
+            texto = render(
+                ar.get("welcome_message") or "Bem-vindo ao servidor!",
+                user=membro, member=membro, guild=guild, channel=message.channel,
+            )
+            if texto:
+                await message.channel.send(texto[:2000])
+
+            if ar.get("delete_message"):
+                atraso = min(120, int(ar.get("delete_delay_seconds") or 0))
+                await asyncio.sleep(atraso)
+                try:
+                    await message.delete()
+                except discord.NotFound:
+                    pass
+
+            try:
+                mongo_db.registrar_auditoria(
+                    guild.id, guild.name, "autorole_concedido", "autorole", membro,
+                    f"cargo {cargo.id}")
+            except Exception:
+                pass
+
+        except discord.Forbidden:
+            await message.add_reaction("⚠️")
+            runtime.log("ERRO", f"sem permissão para dar cargo em {guild.name}", "autorole")
+        except discord.HTTPException as exc:
+            runtime.log("ERRO", f"autorole falhou em {guild.name}: {exc}", "autorole")
+
+    ar = app_commands.Group(name="autorole", description="Liberação de acesso.")
+
+    @ar.command(name="status", description="Mostra a configuração de autorole aqui.")
+    @commands.guild_only()
+    async def ar_status(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        mod = cfg.get("autorole") or {}
+        ativo = st.module_enabled(cfg, "autorole") and mod.get("enabled") and _config_pronta(mod)
+
+        e = discord.Embed(
+            title=f"🎫 Liberação de acesso · {guild.name}",
+            color=discord.Color.green() if ativo else discord.Color.orange(),
+        )
+        e.add_field(name="Estado",
+                    value="✅ funcionando" if ativo else "⚠️ não configurado",
+                    inline=False)
+        canal = guild.get_channel(mod.get("channel_id")) if mod.get("channel_id") else None
+        e.add_field(name="Canal", value=canal.mention if canal else "—", inline=True)
+        cargo = guild.get_role(mod.get("give_role_id")) if mod.get("give_role_id") else None
+        e.add_field(name="Cargo dado", value=cargo.mention if cargo else "—", inline=True)
+        bloqueio = guild.get_role(mod.get("deny_role_id")) if mod.get("deny_role_id") else None
+        e.add_field(name="Cargo bloqueado", value=bloqueio.mention if bloqueio else "—", inline=True)
+        e.add_field(name="Palavra", value=f"`{mod.get('keyword') or 'liberar'}`", inline=True)
+        e.set_footer(text="AURA · configure no painel web")
+        await interaction.response.send_message(embed=e, ephemeral=True)
+
+    @ar.command(name="liberar", description="Libera um membro manualmente.")
+    @commands.guild_only()
+    @app_commands.describe(membro="Quem liberar")
+    @commands.has_permissions(manage_roles=True)
+    async def ar_liberar(self, interaction: discord.Interaction, membro: discord.Member):
+        cfg = await st.get_config_cached(interaction.guild.id,
+                                         guild_name=interaction.guild.name)
+        ar = cfg.get("autorole") or {}
+        cargo_id = ar.get("give_role_id")
+        cargo = interaction.guild.get_role(cargo_id) if cargo_id else None
+        if cargo is None:
+            return await interaction.response.send_message(
+                "❌ Nenhum cargo de entrada configurado no painel.", ephemeral=True)
+        try:
+            await membro.add_roles(cargo, reason=f"AURA: liberado por {interaction.user}")
+        except discord.Forbidden:
+            return await interaction.response.send_message(
+                "❌ Sem permissão para dar esse cargo.", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ {membro.mention} recebeu {cargo.mention}.", ephemeral=True)
+
+    @ar.command(name="revogar", description="Remove o cargo de um membro.")
+    @commands.guild_only()
+    @app_commands.describe(membro="Quem revogar")
+    @commands.has_permissions(manage_roles=True)
+    async def ar_revogar(self, interaction: discord.Interaction, membro: discord.Member):
+        cfg = await st.get_config_cached(interaction.guild.id,
+                                         guild_name=interaction.guild.name)
+        ar = cfg.get("autorole") or {}
+        cargo_id = ar.get("give_role_id")
+        cargo = interaction.guild.get_role(cargo_id) if cargo_id else None
+        if cargo is None:
+            return await interaction.response.send_message(
+                "❌ Nenhum cargo de entrada configurado.", ephemeral=True)
+        try:
+            await membro.remove_roles(cargo, reason=f"AURA: revogado por {interaction.user}")
+        except discord.Forbidden:
+            return await interaction.response.send_message(
+                "❌ Sem permissão.", ephemeral=True)
+        await interaction.response.send_message(
+            f"✅ {membro.mention} perdeu {cargo.mention}.", ephemeral=True)
 
 
 async def setup(client: commands.Bot) -> None:
-    """Função para carregar a Cog no bot."""
     await client.add_cog(Autorole(client))

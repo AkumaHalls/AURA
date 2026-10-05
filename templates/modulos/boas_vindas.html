@@ -1,0 +1,49 @@
+{% from "modulo_form.html" import campo_canal, campo_cargo, campo_numero, acao_validar, ajuda_placeholders, salvar with context %}
+
+{% set bv = cfg.boas_vindas %}
+
+<form method="post" action="{{ url_for('salvar_generico', modulo='boas_vindas', guild=guild.id) }}">
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold">
+      <div class="form-check form-switch d-inline-block me-2">
+        <input class="form-check-input" type="checkbox" name="enabled" id="bv_on"
+               {{ 'checked' if bv.enabled }}>
+      </div>
+      <label class="form-check-label fw-semibold mb-0" for="bv_on">Boas-vindas e despedidas</label>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">{{ campo_canal('channel_id', 'Canal principal', bv.channel_id,
+          'Onde entram e saem as mensagens.') }}</div>
+        <div class="col-md-6">{{ campo_canal('log_channel_id', 'Canal de registros', bv.log_channel_id,
+          'Histórico completo de entradas e saídas.') }}</div>
+        <div class="col-12">
+          <label class="form-label">Mensagem de entrada</label>
+          <textarea class="form-control" name="message" rows="2">{{ bv.message }}</textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Mensagem de saída</label>
+          <textarea class="form-control" name="leave_message" rows="2">{{ bv.leave_message }}</textarea>
+        </div>
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="send_dm" id="bv_dm"
+                   {{ 'checked' if bv.send_dm }}>
+            <label class="form-check-label" for="bv_dm">Enviar mensagem privada ao entrar</label>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Mensagem privada</label>
+          <textarea class="form-control" name="dm_message" rows="2">{{ bv.dm_message }}</textarea>
+          <div class="form-text placeholder-doc">
+            Discord não entrega DM a quem não tem a DM aberta.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-aura px-4">
+    <i class="bi bi-check2 me-1"></i>Salvar boas-vindas
+  </button>
+</form>

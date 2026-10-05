@@ -1,0 +1,47 @@
+{% from "modulo_form.html" import campo_canal, campo_cargo, campo_numero, acao_validar, ajuda_placeholders, salvar with context %}
+
+{% set lg = cfg.logs %}
+
+<form method="post" action="{{ url_for('salvar_generico', modulo='logs', guild=guild.id) }}">
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold">
+      <div class="form-check form-switch d-inline-block me-2">
+        <input class="form-check-input" type="checkbox" name="enabled" id="lg_on"
+               {{ 'checked' if lg.enabled }}>
+      </div>
+      <label class="form-check-label fw-semibold mb-0" for="lg_on">Registro de atividade</label>
+    </div>
+    <div class="card-body">
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">{{ campo_canal('join_channel_id', 'Entradas', lg.join_channel_id) }}</div>
+        <div class="col-md-6">{{ campo_canal('leave_channel_id', 'Saídas', lg.leave_channel_id) }}</div>
+        <div class="col-md-6">{{ campo_canal('message_channel_id', 'Mensagens apagadas', lg.message_channel_id) }}</div>
+        <div class="col-md-6">{{ campo_canal('mod_channel_id', 'Ações de moderação', lg.mod_channel_id) }}</div>
+        <div class="col-md-6">{{ campo_canal('boost_channel_id', 'Boosts e unbots', lg.boost_channel_id) }}</div>
+      </div>
+
+      <div class="row g-2">
+        {% for chave, rotulo in [('log_join', 'Registrar entradas'),
+                                 ('log_leave', 'Registrar saídas'),
+                                 ('log_boost', 'Registrar boosts'),
+                                 ('log_message_delete', 'Registrar mensagens apagadas'),
+                                 ('log_role_change', 'Registrar mudança de cargos')] %}
+        <div class="col-md-6 col-lg-4">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="{{ chave }}"
+                   id="{{ chave }}" {{ 'checked' if lg[chave] }}>
+            <label class="form-check-label" for="{{ chave }}">{{ rotulo }}</label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="form-text placeholder-doc mt-2">
+        Cada canal só recebe os eventos marcados aqui.
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-aura px-4">
+    <i class="bi bi-check2 me-1"></i>Salvar logs
+  </button>
+</form>

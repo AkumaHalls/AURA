@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block titulo %}Geral{% endblock %}
+
+{% block conteudo %}
+<h1 class="h4 text-white mb-1">Configurações gerais</h1>
+<p class="text-muted mb-4">{{ guild.name }}</p>
+
+<form method="post" action="{{ url_for('salvar_basico', chave='geral', guild=guild.id) }}">
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold"><i class="bi bi-sliders me-2"></i>Básico</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="form-label">Prefixo de comandos</label>
+          <input class="form-control" name="prefix" value="{{ cfg.prefix }}" maxlength="16">
+          <div class="form-text placeholder-doc">Cada servidor tem o seu.</div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Idioma</label>
+          <select class="form-select" name="locale">
+            {% for l in ['pt-BR', 'en-US', 'es-ES'] %}
+            <option value="{{ l }}" {{ 'selected' if cfg.locale == l }}>{{ l }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Donos extras</label>
+          <input class="form-control mono" name="owner_ids_texto"
+                 value="{{ owner_ids_texto }}"
+                 placeholder="123456789 987654321">
+          <div class="form-text placeholder-doc">
+            IDs do Discord, separados por espaço. Têm acesso ao <code>/owner</code>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold"><i class="bi bi-plug me-2"></i>Ativar módulos</div>
+    <div class="card-body">
+      <div class="row g-2">
+        {% for s in status_modulos %}
+        <div class="col-md-6 col-lg-3">
+          <div class="form-check form-switch p-2 rounded"
+               style="background:#0d1117;border:1px solid var(--aura-borda)">
+            <input class="form-check-input" type="checkbox" name="mod_{{ s.key }}"
+                   id="mod_{{ s.key }}" {{ 'checked' if cfg.modules[s.key] }}>
+            <label class="form-check-label" for="mod_{{ s.key }}">{{ s.label }}</label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="form-text placeholder-doc mt-2">
+        Cada módulo só funciona depois de configurado na página dele.
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-aura"><i class="bi bi-check2 me-1"></i>Salvar</button>
+</form>
+
+<div class="card-aura card mt-4">
+  <div class="card-header fw-semibold"><i class="bi bi-magic me-2"></i>Perfis prontos</div>
+  <div class="card-body">
+    <p class="placeholder-doc">
+      Aplica um conjunto de categorias e mensagens já prontas.
+      <strong>Revise os canais antes de salvar</strong> — o perfil não define canais.
+    </p>
+    <div class="d-flex flex-wrap gap-2">
+      {% for p in perfis %}
+      <form method="post" action="{{ url_for('salvar_basico', chave='preset', guild=guild.id) }}">
+        <input type="hidden" name="perfil" value="{{ p }}">
+        <button class="btn btn-sm btn-outline-secondary">{{ p }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="card-aura card mt-4">
+  <div class="card-header fw-semibold"><i class="bi bi-hdd me-2"></i>Sistema</div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('acao_validar') }}">
+      <input type="hidden" name="guild" value="{{ guild.id }}">
+      <button class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-shield-check me-1"></i>Validar canais e cargos contra o Discord
+      </button>
+      <span class="placeholder-doc ms-2">
+        {% if snap.channels|length %}
+          {{ snap.channels|length }} canais e {{ snap.roles|length }} cargos visíveis.
+        {% else %}
+          O bot ainda não respondeu — os seletores aparecem quando ele conectar.
+        {% endif %}
+      </span>
+    </form>
+  </div>
+</div>
+{% endblock %}

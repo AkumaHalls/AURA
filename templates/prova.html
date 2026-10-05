@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titulo %}Prova{% endblock %}
+
+{% block conteudo %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('provas', guild=guild.id) }}">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h1 class="h4 mb-0 text-white">{{ prova.user_name or prova.user_id }}</h1>
+  <span class="badge {{ 'chip-on' if prova.passed else 'chip-warn' }}">
+    {{ 'aprovado' if prova.passed else 'reprovado' }}
+  </span>
+</div>
+
+<div class="card-aura card">
+  <div class="card-body">
+    <table class="table table-sm table-aura" style="max-width:420px">
+      <tbody>
+        <tr><td class="text-muted">Nota</td>
+            <td class="text-end mono">{{ prova.score }} / {{ prova.total }}</td></tr>
+        <tr><td class="text-muted">Quando</td>
+            <td class="text-end mono">{{ prova.date|datahora }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

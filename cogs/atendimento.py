@@ -1,495 +1,824 @@
-import discord,os,asyncio,time
-from discord.ext import commands
-from discord import app_commands,utils
-from datetime import datetime
-from cogs.owner import getdonoid,getmensagemerro
-from dotenv import load_dotenv
+"""
+AURA · Tickets
+--------------
+Atendimento configurável POR SERVIDOR. Nada aqui é fixo em Clash of Clans:
+o painel define as categorias (nome, emoji, descrição, mensagem de abertura e
+cargo extra de staff), e o bot monta o painel e cria as threads a partir disso.
 
-#GET INFO USO
-donoid = getdonoid()
-mensagemerro = getmensagemerro()
+Fluxo:
+    /painel enviar        publica o painel de categorias no canal
+    botão/select          cria a thread privada, salva no Mongo
+    /atendimento atender  um staff assume o ticket
+    botão Fechar          gera a transcrição, salva e opcionalmente avalia
 
-#CARREGA E LE O ARQUIVO .env na raiz
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env')) #load .env da raiz
+Threads são nomeadas `ticket-<user_id>-<n>`; o ID do Mongo fica guardado na
+thread em `topic` e no documento, então não dependemos de parsing de nome.
+"""
 
-# Função auxiliar para ler env vars de inteiros sem crashar
-def _get_env_int(name, default=None):
-    val = os.getenv(name)
-    if val is None or val.strip() == "":
-        return default
-    try:
-        return int(val.strip())
-    except ValueError:
-        return default
+from __future__ import annotations
 
-# Carrega cada variável individualmente (tolera ausência)
-id_cargo_atendente = _get_env_int("id_cargo_atendente")
-id_canal_suporte = _get_env_int("id_canal_suporte")
-id_categoria_staff = _get_env_int("id_categoria_staff")
-id_servidor_bh = _get_env_int("id_servidor_bh")
-id_canal_logs_bh = _get_env_int("id_canal_logs_bh")
-id_canal_avaliacao = _get_env_int("id_canal_avaliacao")
-id_servidor_tribunal = _get_env_int("id_servidor_tribunal")
-id_canal_logs_tri = _get_env_int("id_canal_logs_tri")
+import asyncio
+import re
+from io import BytesIO
+from typing import Any, Dict, List, Optional
 
-# Mostra quais estão faltando (sem travar o cog)
-_var_faltando = [k for k, v in [
-    ("id_cargo_atendente", id_cargo_atendente),
-    ("id_canal_suporte", id_canal_suporte),
-    ("id_categoria_staff", id_categoria_staff),
-    ("id_servidor_bh", id_servidor_bh),
-    ("id_canal_logs_bh", id_canal_logs_bh),
-    ("id_canal_avaliacao", id_canal_avaliacao),
-    ("id_servidor_tribunal", id_servidor_tribunal),
-    ("id_canal_logs_tri", id_canal_logs_tri),
-] if v is None]
-if _var_faltando:
-    print(f"⚠️ ATENDIMENTO: Variáveis de ambiente NÃO configuradas: {', '.join(_var_faltando)}")
-    print("   Comandos de ticket não funcionarão até preencher essas vars no Portainer.")
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+
+import mongo_db
+from core import runtime
+from core import settings as st
+from core.placeholders import render
+
+#: Painéis publicados, para o /painel remover o anterior sem duplicar.
+_painel_ids: Dict[str, int] = {}
+_views_registradas: Dict[str, "TicketPanelView"] = {}
+
+CATEGORIA_RE = re.compile(r"^ticket-\d{15,25}-\d+$")
 
 
-#Variaveis de USO GLOBAL
-emojiglobal = "⚔️"
-tipoticket = "1"
-staff = "1"
-mensagemcanal = "1"
-categoriadeatendimento = "1"
+def _canal_do_ticket(thread: discord.Thread) -> Optional[str]:
+    """Extrai o ID do Mongo do topoico da thread."""
+    topico = (thread.topic or "").strip()
+    if topico.startswith("aura-ticket:"):
+        return topico.split(":", 1)[1].strip() or None
+    return None
 
-#PAINEL SUPORTE DO CLÃ (Clash of Clans)
-class suporte_cla(discord.ui.Select):
-    def __init__(self):
-        options = [
-            discord.SelectOption(value="regras_cla",label="Dúvidas sobre Regras do Clã", emoji="📜"),
-            discord.SelectOption(value="guerras_cwl",label="Ajuda com Guerras ou CWL", emoji="⚔️"),
-            discord.SelectOption(value="doacoes",label="Problemas com Doações", emoji="🛡️"),
-            discord.SelectOption(value="denuncia",label="Denunciar um Membro", emoji="🚨"),
-            discord.SelectOption(value="apelo_ban",label="Apelar de um Banimento", emoji="🔨"),
-            discord.SelectOption(value="sugestao",label="Sugestões para o Clã", emoji="💡"),
-            discord.SelectOption(value="recrutamento",label="Interesse em Recrutamento", emoji="📈"),
-            discord.SelectOption(value="outros",label="Outros Assuntos", emoji="❔"),
+
+def _nome_da_thread(user: discord.Member, numero: int) -> str:
+    base = re.sub(r"[^a-z0-9\-]", "", user.name.lower().replace(" ", "-"))[:24] or "user"
+    return f"ticket-{user.id}-{numero}"
+
+
+# ==========================================================================
+# Painel de categorias
+# ==========================================================================
+
+class TicketPanelView(discord.ui.View):
+    """Botões (e menu) gerados a partir das categorias configuradas no painel."""
+
+    def __init__(self, guild_id: int, categorias: List[Dict[str, Any]]):
+        super().__init__(timeout=None)
+        self.guild_id = int(guild_id)
+        self.categorias = categorias or []
+        self._montar()
+
+    # ---------- construção ----------
+
+    def _montar(self):
+        self.clear_items()
+
+        if len(self.categorias) <= 20:
+            for i, cat in enumerate(self.categorias[:20]):
+                self.add_item(TicketButton(self.guild_id, cat, row=i // 5))
+        else:
+            # Acima de 20 botões o Discord estoura o limite de 25 componentes,
+            # então o menu assume sozinho.
+            self.add_item(TicketSelect(self.guild_id, self.categorias[:25], row=4))
+
+    def recarregar(self, categorias: List[Dict[str, Any]]):
+        self.categorias = categorias or []
+        self._montar()
+
+    async def abrir(self, interaction: discord.Interaction, key: str):
+        await abrir_ticket(interaction, key, self.guild_id)
+
+
+class TicketButton(discord.ui.Button):
+    def __init__(self, guild_id: int, categoria: Dict[str, Any], row: int = 0):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label=(categoria.get("label") or "Ticket")[:80],
+            emoji=categoria.get("emoji") or None,
+            row=row,
+            custom_id=f"tk:{guild_id}:{categoria.get('key')}",
+        )
+        self.guild_id = int(guild_id)
+        self.key = categoria.get("key")
+
+    async def callback(self, interaction: discord.Interaction):
+        view = getattr(self, "_view", None)
+        gid = getattr(view, "guild_id", None) or self.guild_id
+        await abrir_ticket(interaction, self.key, gid)
+
+
+class TicketSelect(discord.ui.Select):
+    def __init__(self, guild_id: int, categorias: List[Dict[str, Any]], row: int = 4):
+        opcoes = [
+            discord.SelectOption(
+                label=(c.get("label") or "Ticket")[:100],
+                value=str(c.get("key")),
+                description=(c.get("description") or "")[:100] or None,
+                emoji=c.get("emoji") or None,
+            )
+            for c in categorias[:25]
         ]
         super().__init__(
-            placeholder="Selecione um tópico para o suporte...",
+            placeholder="Escolha o assunto do seu ticket…",
+            custom_id=f"tk:{guild_id}:select",
+            options=opcoes,
+            row=row,
             min_values=1,
             max_values=1,
-            options=options,
-            custom_id="persistent_view:dropdown_clash_support"
         )
+        self.guild_id = int(guild_id)
+
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
-
-        global emojiglobal, tipoticket, staff, mensagemcanal, categoriadeatendimento
-
-        if self.values[0] == "regras_cla":
-            emojiglobal = "📜"; tipoticket = "Dúvidas sobre Regras"; staff = id_cargo_atendente
-            mensagemcanal = "Por favor, descreva sua dúvida sobre as regras do clã para que um líder ou co-líder possa te ajudar."
-            categoriadeatendimento = id_categoria_staff
-            await interaction.followup.send("**Dúvidas sobre as regras?**\n\nAntes de abrir um ticket, por favor, verifique o canal de regras. Se a sua dúvida não for respondida lá, abra um ticket no botão abaixo.", view=CreateTicket())
-
-        elif self.values[0] == "guerras_cwl":
-            emojiglobal = "⚔️"; tipoticket = "Guerras e CWL"; staff = id_cargo_atendente
-            mensagemcanal = "Por favor, detalhe seu problema ou dúvida sobre a Guerra de Clãs ou a Liga de Guerra. Se for sobre uma base inimiga, envie um print dela."
-            categoriadeatendimento = id_categoria_staff
-            await interaction.followup.send("**Precisa de ajuda com a Guerra?**\n\nSe você tem dúvidas sobre qual vila atacar ou estratégias, abra um ticket para conversar com a liderança.", view=CreateTicket())
-
-        elif self.values[0] == "doacoes":
-            emojiglobal = "🛡️"; tipoticket = "Doações"; staff = id_cargo_atendente
-            mensagemcanal = "Informe qual o problema que você está tendo com as doações (tropas erradas, falta de doação, etc)."
-            categoriadeatendimento = id_categoria_staff
-            await interaction.followup.send("**Problemas com doações?**\n\nSe alguém não está seguindo as regras de doação ou você tem alguma outra questão, abra um ticket.", view=CreateTicket())
-
-        elif self.values[0] == "denuncia":
-            emojiglobal = "🚨"; tipoticket = "Denúncia"; staff = id_cargo_atendente
-            mensagemcanal = "Para a sua denúncia, por favor, escreva detalhadamente o que aconteceu e, se possível, envie prints como prova."
-            categoriadeatendimento = id_categoria_staff
-            await interaction.followup.send("**Deseja denunciar um membro?**\n\nPara denunciar alguém, tenha em mãos o **motivo, o nome do membro e provas (prints)**. Abra um ticket para prosseguir.", view=CreateTicket())
-
-        elif self.values[0] == "apelo_ban":
-            emojiglobal = "🔨"; tipoticket = "Apelo de Banimento"; staff = id_cargo_atendente
-            mensagemcanal = "Para seu apelo, por favor, informe sua **TAG de jogador do Clash of Clans**, o **motivo do banimento** (se souber) e **por que você acredita que a punição deve ser revertida**."
-            categoriadeatendimento = id_categoria_staff
-            await interaction.followup.send("**Você foi banido do clã e deseja apelar?**\n\nEntendemos que erros podem acontecer. Para que possamos analisar seu caso, por favor, abra um ticket.", view=CreateTicket())
-
-        elif self.values[0] == "sugestao":
-            emojiglobal = "💡"; tipoticket = "Sugestão"; staff = id_cargo_atendente
-            mensagemcanal = "Agradecemos sua ajuda! Por favor, escreva sua sugestão para o clã da forma mais detalhada possível."
-            categoriadeatendimento = id_categoria_staff
-            await interaction.followup.send("**Tem uma sugestão para melhorar o clã?**\n\nAdoramos ouvir novas ideias! Abra um ticket para compartilhar sua sugestão com a liderança.", view=CreateTicket())
-
-        elif self.values[0] == "recrutamento":
-            emojiglobal = "📈"; tipoticket = "Recrutamento"; staff = id_cargo_atendente
-            mensagemcanal = "Olá! Se você tem interesse em recrutar um amigo ou quer saber mais sobre nosso processo de recrutamento, por favor, nos informe aqui."
-            categoriadeatendimento = id_categoria_staff
-            await interaction.followup.send("**Interessado em recrutamento?**\n\nSe você quer convidar um amigo para o clã ou tem alguma dúvida sobre os requisitos, abra um ticket.", view=CreateTicket())
-        
-        elif self.values[0] == "outros":
-            emojiglobal = "❔"; tipoticket = "Outros Assuntos"; staff = id_cargo_atendente
-            mensagemcanal = "Por favor, descreva em detalhes o motivo do seu contato para que possamos te ajudar da melhor forma."
-            categoriadeatendimento = id_categoria_staff
-            await interaction.followup.send("**Seu assunto não está na lista?**\n\nSem problemas! Crie um ticket clicando no botão abaixo.", view=CreateTicket())
+        view = getattr(self, "_view", None)
+        gid = getattr(view, "guild_id", None) or self.guild_id
+        await abrir_ticket(interaction, self.values[0], gid)
 
 
-#PAINEL PERSISTENTE
-class DropdownSuporte(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(suporte_cla())
+# ==========================================================================
+# Views dentro do ticket
+# ==========================================================================
 
-
-# VIEW DE ENCERRAMENTO COM BOTÕES
-class CloseTicketView(discord.ui.View):
-    def __init__(self, canal=None):
-        super().__init__(timeout=120)
-        self.canal = canal
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if self.canal is None:
-            await interaction.response.send_message("Sessão expirada. Feche o ticket novamente pelo painel.", ephemeral=True)
-            return False
-        return True
-
-    @discord.ui.button(label="Fechar Ticket", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="fechar_ticket_confirm")
-    async def fechar_ticket_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        canal = self.canal
-        await interaction.response.send_message("Okay! Salvando o histórico e fechando este ticket em 5 segundos...")
-
-        user_id = canal.name.split('-')[-1]
-        nome_canal = canal.name
-
-        # --- COLETA TRANSCRIPT DA THREAD ---
-        transcript_lines = []
-        try:
-            async for message in canal.history(limit=None, oldest_first=True):
-                created = datetime.strftime(message.created_at, "%d/%m/%Y às %H:%M:%S")
-                line = f"[{created}] {message.author}: {message.clean_content}"
-                transcript_lines.append(line)
-        except Exception as e:
-            print(f"ERRO ao ler historico do ticket {nome_canal}: {e}")
-
-        # --- SALVA TRANSCRIPT EM ARQUIVO (canal de logs) ---
-        log_channel = None
-        if interaction.guild and interaction.guild.id == id_servidor_bh: 
-            log_channel = interaction.guild.get_channel(id_canal_logs_bh)
-        elif interaction.guild and interaction.guild.id == id_servidor_tribunal: 
-            log_channel = interaction.guild.get_channel(id_canal_logs_tri)
-
-        if log_channel:
-            log_filename = f"{canal.id}.md"
-            try:
-                with open(log_filename, 'w', encoding="utf-8") as f:
-                    f.write(f"# Histórico de {nome_canal}:\n\n")
-                    for line in transcript_lines:
-                        f.write(line + "\n")
-                    f.write(f"\n*Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')} (UTC)*")
-                
-                with open(log_filename, 'rb') as f:
-                    await log_channel.send(f"Transcrição do ticket `{nome_canal}`:", file=discord.File(f, f"{nome_canal}.md"))
-                os.remove(log_filename)
-                print(f"Log do ticket {nome_canal} salvo com sucesso em {log_channel.name}.")
-            except Exception as e:
-                print(f"ERRO ao salvar o log do ticket {nome_canal}: {e}")
-        else:
-            print(f"AVISO: Salvamento de log ignorado (sem canal configurado).")
-        
-        # --- SALVA NO MONGODB (status + transcript) ---
-        try:
-            from mongo_db import get_db
-            db = get_db()
-            if db is not None:
-                db.tickets.update_one(
-                    {"user_id": str(user_id), "status": {"$ne": "fechado"}},
-                    {"$set": {
-                        "status": "fechado",
-                        "transcript": "\n".join(transcript_lines),
-                        "atendente": interaction.user.name
-                    }}
-                )
-                print(f"MongoDB: Ticket de user {user_id} fechado com {len(transcript_lines)} linhas de transcript.")
-        except Exception as e:
-            print(f"Erro ao fechar ticket no MongoDB: {e}")
-
-        await asyncio.sleep(5)
-        try:
-            await canal.delete()
-        except Exception:
-            pass
-
-    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary, emoji="↩️", custom_id="cancelar_fechar_ticket")
-    async def cancelar_fechar_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await interaction.delete_original_response()
-        await interaction.followup.send("O fechamento do ticket foi cancelado. A conversa pode continuar.", ephemeral=True)
-
-# [NOVA] VIEW DO PAINEL DE ADMIN DO TICKET
 class TicketAdminView(discord.ui.View):
-    def __init__(self):
+    """Botões que o solicitante vê: fechar ou cancelar."""
+
+    def __init__(self, guild_id: int):
         super().__init__(timeout=None)
+        self.guild_id = int(guild_id)
 
-    @discord.ui.button(label="Atender", style=discord.ButtonStyle.green, emoji="✅", custom_id="atender_ticket")
-    async def atender_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        atendente_role = interaction.guild.get_role(id_cargo_atendente)
-        if atendente_role not in interaction.user.roles and not interaction.user.guild_permissions.manage_guild:
-            return await interaction.response.send_message("Você não tem permissão para atender este ticket.", ephemeral=True)
-        
-        await interaction.response.defer()
+    @discord.ui.button(label="Fechar ticket", style=discord.ButtonStyle.danger,
+                       custom_id="tk:fechar")
+    async def fechar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _fechar_ticket(interaction, self.guild_id, interaction.user)
 
-        button.disabled = True
-        button.label = "Em Atendimento"
-        
-        original_embed = interaction.message.embeds[0]
-        new_embed = original_embed.copy()
-        new_embed.color = discord.Color.green()
-        new_embed.add_field(name="Atendido por", value=interaction.user.mention, inline=False)
+    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.secondary,
+                       custom_id="tk:cancelar")
+    async def cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cancelar_ticket(interaction)
 
+
+class StaffTicketView(discord.ui.View):
+    """Botões que o staff vê: assumir, transcrição, fechar."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = int(guild_id)
+
+    @discord.ui.button(label="Assumir", style=discord.ButtonStyle.success,
+                       custom_id="tk:assumir")
+    async def assumir(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = await st.get_config_cached(self.guild_id,
+                                         guild_name=interaction.guild.name)
+        if not await _pode_atender(interaction.user, cfg):
+            return _erro(interaction, "Só a equipe de atendimento pode assumir este ticket.")
+
+        ticket_id = _canal_do_ticket(interaction.channel)
+        if not ticket_id:
+            return _erro(interaction, "Este ticket não está registrado no banco.")
+
+        if interaction.user.id == await _dono_do_ticket(interaction.channel):
+            return _msg(interaction, "Você já está atendendo este ticket.",
+                        ephemeral=True)
+
+        ok = mongo_db.atualizar_ticket_status(
+            ticket_id, "atendendo", str(interaction.user))
+        mongo_db.registrar_auditoria(
+            self.guild_id, interaction.guild.name, "ticket_atendido", "tickets",
+            str(interaction.user), f"assumiu o ticket {ticket_id}",
+        )
+        await _msg(
+            interaction,
+            f"✅ {interaction.user.mention} assumiu este atendimento."
+            + ("" if ok else "\n⚠️ Não consegui salvar o status no banco."),
+        )
+
+    @discord.ui.button(label="Salvar transcrição", style=discord.ButtonStyle.primary,
+                       custom_id="tk:transcricao")
+    async def transcricao(self, interaction: discord.Interaction, button: discord.ui.Button):
+        cfg = await st.get_config_cached(self.guild_id,
+                                         guild_name=interaction.guild.name)
+        if not await _pode_atender(interaction.user, cfg):
+            return _erro(interaction, "Só a equipe de atendimento pode salvar a transcrição.")
+
+        await interaction.response.defer(ephemeral=True)
+        texto = await _montar_transcricao(interaction.channel)
+        ticket_id = _canal_do_ticket(interaction.channel)
+        mensagens = texto.count("\n") if texto else 0
+        ok = mongo_db.salvar_transcricao(ticket_id, texto,
+                                         atendente=str(interaction.user),
+                                         mensagem_count=mensagens)
+        mongo_db.registrar_auditoria(
+            self.guild_id, interaction.guild.name, "ticket_transcricao", "tickets",
+            str(interaction.user), ticket_id,
+        )
+        await interaction.followup.send(
+            "📄 Transcrição salva no painel." if ok else "⚠️ Falha ao salvar a transcrição.",
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Fechar", style=discord.ButtonStyle.danger,
+                       custom_id="tk:staff_fechar")
+    async def fechar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _fechar_ticket(interaction, self.guild_id, interaction.user)
+
+
+class RatingView(discord.ui.View):
+    """Avaliação de 1 a 5, enviada quando o ticket é fechado."""
+
+    def __init__(self, guild_id: int, ticket_id: str):
+        super().__init__(timeout=None)
+        self.guild_id = int(guild_id)
+        self.ticket_id = ticket_id
+        for nota in range(1, 6):
+            self.add_item(RatingButton(guild_id, ticket_id, nota))
+
+    def disable(self):
+        for item in self.children:
+            item.disabled = True
+
+
+class RatingButton(discord.ui.Button):
+    def __init__(self, guild_id: int, ticket_id: str, nota: int):
+        super().__init__(
+            style=discord.ButtonStyle.success if nota >= 4 else discord.ButtonStyle.secondary,
+            label=f"{nota} ⭐",
+            custom_id=f"tk:{guild_id}:rate:{nota}",
+            row=0,
+        )
+        self.guild_id = int(guild_id)
+        self.ticket_id = ticket_id
+        self.nota = nota
+
+    async def callback(self, interaction: discord.Interaction):
+        mongo_db.salvar_feedback(self.ticket_id, str(interaction.user.id), self.nota)
+        mongo_db.registrar_auditoria(
+            self.guild_id, interaction.guild.name, "ticket_avaliado", "tickets",
+            str(interaction.user), f"{self.nota}/5",
+        )
+        for item in self._view.children:
+            item.disabled = True
+        await interaction.response.edit_message(
+            content=f"Obrigado pela avaliação: **{self.nota}/5** ⭐", view=self._view)
+
+
+# ==========================================================================
+# Regras de acesso
+# ==========================================================================
+
+async def _pode_atender(member: discord.Member, cfg: Dict[str, Any]) -> bool:
+    if member.guild_permissions.administrator or member.guild_permissions.manage_channels:
+        return True
+    cargos = {cfg.get("tickets", {}).get("staff_role_id")}
+    for cat in cfg.get("tickets", {}).get("categories") or []:
+        cargos.add(cat.get("staff_role_id"))
+    cargos.discard(None)
+    return bool({r.id for r in member.roles}.intersection(cargos))
+
+
+def _eh_staff(member: discord.Member, guild: discord.Guild) -> bool:
+    if member.guild_permissions.administrator or member.guild_permissions.manage_channels:
+        return True
+    return any(r.name.lower() in ("staff", "atendente", "suporte", "mod", "moderador")
+               for r in member.roles)
+
+
+async def _dono_do_ticket(thread: discord.Thread) -> Optional[int]:
+    """
+    Descobre o ID de quem abriu o ticket olhando o embed inicial.
+    `Thread.history` é um iterador assíncrono, então só dá para percorrer
+    com `async for`, e sem inverter a ordem.
+    """
+    try:
+        async for msg in thread.history(limit=30):
+            if msg.author.id != thread.guild.me.id:
+                continue
+            for embed in msg.embeds or []:
+                for field in embed.fields:
+                    if field.name != "Membro":
+                        continue
+                    digitos = re.search(r"\d{15,25}", field.value or "")
+                    if digitos:
+                        return int(digitos.group())
+            if msg.embeds:
+                break
+    except (discord.Forbidden, discord.HTTPException, AttributeError):
+        pass
+    return None
+
+
+# ==========================================================================
+# Ações
+# ==========================================================================
+
+async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int = None):
+    guild = interaction.guild
+    gid = int(guild_id or guild.id)
+
+    cfg = await st.get_config_cached(gid, guild_name=guild.name)
+    if not st.module_enabled(cfg, "tickets"):
+        return _erro(interaction, "O módulo de tickets está **desligado** neste servidor. "
+                                  "Ligue em **{0} → Tickets** no painel.".format(guild.name))
+
+    pronto, falta = st.tickets_ready(cfg)
+    if not pronto:
+        return _erro(interaction, f"O módulo de tickets não está pronto: falta {falta}. "
+                                  "Configure em **{0} → Tickets** no painel.".format(guild.name))
+
+    tk = cfg["tickets"]
+    cat = next((c for c in tk["categories"] if c.get("key") == key), None)
+    if cat is None:
+        return _erro(interaction, "Essa categoria não existe mais. "
+                                  "Use o painel atualizado do servidor.")
+
+    suporte = guild.get_channel(tk["support_channel_id"])
+    if suporte is None or not isinstance(suporte, discord.TextChannel):
+        return _erro(interaction, "O canal de suporte configurado não existe mais.")
+
+    if interaction.user.bot:
+        return _erro(interaction, "Bots não abrem tickets.")
+
+    max_abertos = int(tk.get("max_open_per_user") or 0)
+    abertos = mongo_db.tickets_abertos_por_usuario(gid, interaction.user.id)
+    if max_abertos and abertos >= max_abertos:
+        return _erro(interaction, f"Você já tem **{abertos}** ticket(s) aberto(s). "
+                                  f"O limite deste servidor é {max_abertos}.")
+
+    numero = mongo_db.contar_tickets(gid).get("total", 0) + 1
+    nome = _nome_da_thread(interaction.user, numero)
+
+    # Reaproveita uma thread do mesmo usuário que ainda esteja aberta.
+    for th in suporte.threads:
+        if th.name == nome and not th.archived:
+            return _msg(interaction, f"Você já tem um ticket aberto: {th.mention}",
+                        ephemeral=True)
+
+    try:
+        thread = await suporte.create_thread(
+            name=nome, type=discord.ChannelType.private_thread,
+            reason=f"AURA ticket: {cat.get('label')}")
+    except discord.Forbidden:
+        return _erro(interaction, "Não tenho permissão para criar threads aqui.")
+    except discord.HTTPException as exc:
+        runtime.log("ERRO", f"Falha ao criar thread: {exc}", "tickets")
+        return _erro(interaction, "Não consegui criar o ticket agora. Tente de novo.")
+
+    # Thread privada: sem isso o membro não consegue nem ver o canal.
+    try:
+        await thread.add_user(interaction.user)
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        runtime.log("ERRO", f"Falha ao adicionar membro na thread: {exc}", "tickets")
+        await _erro(interaction, "Criei o ticket, mas não consegui te adicionar nele. "
+                                 "Abra o painel de novo em instantes.")
+        return
+
+    ticket_id = mongo_db.salvar_ticket(
+        interaction.user.id, interaction.user.name, cat.get("label"),
+        "aberto", guild_id=gid, guild_name=guild.name,
+        ticket_id=str(thread.id), channel_name=thread.name,
+        categoria_key=cat.get("key"),
+        avatar=str(interaction.user.display_avatar.url),
+    )
+
+    if ticket_id:
         try:
-            from mongo_db import atualizar_ticket
-            user_id = interaction.channel.name.split('-')[-1]
-            atualizar_ticket(user_id, "atendendo", interaction.user.name)
-        except Exception:
+            await thread.edit(topic=f"aura-ticket:{ticket_id}")
+        except discord.Forbidden:
             pass
 
-        await interaction.message.edit(embed=new_embed, view=self)
-        await interaction.channel.send(f"✅ O ticket está sendo atendido por {interaction.user.mention}.")
+    mencao_staff = ""
+    if tk.get("staff_role_id"):
+        mencao_staff = f"<@&{tk['staff_role_id']}>"
+    elif guild.owner_id:
+        mencao_staff = f"<@{guild.owner_id}>"
 
-    @discord.ui.button(label="Fechar", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="fechar_ticket_inicial")
-    async def fechar_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        atendente_role = interaction.guild.get_role(id_cargo_atendente)
-        if atendente_role not in interaction.user.roles and not interaction.user.guild_permissions.manage_guild:
-            return await interaction.response.send_message("Você não tem permissão para fechar este ticket.", ephemeral=True)
-        
-        await interaction.response.send_message("Você tem certeza que deseja fechar o ticket? Esta ação é irreversível.", view=CloseTicketView(canal=interaction.channel), ephemeral=True)
+    embed = discord.Embed(
+        title=f"{cat.get('emoji') or '🎫'} {cat.get('label')}",
+        color=discord.Color(int(str(tk.get("panel_color") or "#2b6cb0").lstrip("#"), 16)),
+    )
+    if cat.get("description"):
+        embed.description = cat["description"][:4000]
+    embed.add_field(name="Membro", value=f"{interaction.user.mention}\n`{interaction.user.id}`",
+                    inline=True)
+    embed.add_field(name="Servidor", value=guild.name, inline=True)
+    embed.set_footer(text=f"AURA · ticket #{numero} · {guild.name}")
+    if interaction.user.display_avatar:
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+    view_ticket = TicketAdminView(gid)
+    view_staff = StaffTicketView(gid)
+    if mencao_staff:
+        await thread.send(mencao_staff, delete_after=8)
+
+    await thread.send(embed=embed, view=view_ticket)
+    await thread.send(view=view_staff, delete_after=15)
+
+    texto = render(
+        tk.get("welcome_message") or "Olá! Um staff já vai te atender por aqui. Descreva seu problema.",
+        user=interaction.user, member=interaction.user, guild=guild, channel=thread,
+        extra={"tipo": cat.get("label"), "motivo": cat.get("description") or ""},
+    )
+    await thread.send(texto[:2000])
+
+    if cat.get("prompt"):
+        await thread.send(f"```\n{cat['prompt'][:1800]}\n```")
+
+    runtime.log(
+        "INFO",
+        f"[{guild.name}] ticket de {interaction.user} · {cat.get('label')}",
+        "tickets",
+    )
+    mongo_db.registrar_auditoria(gid, guild.name, "ticket_aberto", "tickets",
+                                 interaction.user, cat.get("label"))
+
+    await _msg(interaction, f"✅ Ticket aberto: {thread.mention}", ephemeral=True)
 
 
-# [MODIFICADO] BOTÂO CRIAR TICKET
-class CreateTicket(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=300)
+def _erro(interaction: discord.Interaction, texto: str):
+    if interaction.response.is_done():
+        return interaction.followup.send(texto, ephemeral=True)
+    return interaction.response.send_message(texto, ephemeral=True)
 
-    @discord.ui.button(label="Abrir Ticket",style=discord.ButtonStyle.green,emoji="✅")
-    async def ticket(self,interaction: discord.Interaction, button: discord.ui.Button):
-        global emojiglobal, staff, categoriadeatendimento, tipoticket, mensagemcanal
-        
-        await interaction.response.defer() 
 
-        atendente = interaction.guild.get_role(staff)
-        suporte_channel = interaction.guild.get_channel(id_canal_suporte)
-        
-        if not suporte_channel or not isinstance(suporte_channel, discord.TextChannel):
-            print(f"ERRO CRÍTICO: O canal de suporte com ID {id_canal_suporte} não foi encontrado ou não é um canal de texto.")
-            await interaction.followup.send("Desculpe, ocorreu um erro interno ao criar seu ticket. A administração já foi notificada.", ephemeral=True)
-            return
+def _msg(interaction: discord.Interaction, texto: str, ephemeral: bool = True):
+    if interaction.response.is_done():
+        return interaction.followup.send(texto, ephemeral=ephemeral)
+    return interaction.response.send_message(texto, ephemeral=ephemeral)
 
-        channel_name = f"{emojiglobal}┃{interaction.user.name.lower().replace(' ', '-')}-{interaction.user.id}"
-        
-        existing_thread = utils.get(suporte_channel.threads, name=channel_name)
-        if existing_thread is not None:
-            await interaction.followup.send(f"Ei, você já tem um atendimento sobre isso em andamento aqui: {existing_thread.mention}!", ephemeral=True)
-        else:
+
+async def _montar_transcricao(thread: discord.Thread, limite: int = 200) -> str:
+    linhas = [f"# Transcrição · {thread.name}", ""]
+    try:
+        async for msg in thread.history(limit=limite, oldest_first=True):
+            stamp = msg.created_at.strftime("%d/%m %H:%M")
+            quem = msg.author.display_name
+            if msg.author.id == thread.guild.owner_id:
+                quem += " (dono)"
+            elif _eh_staff(msg.author, thread.guild):
+                quem += " (staff)"
+            conteudo = msg.content or "(sem texto)"
+            if msg.embeds:
+                conteudo += " " + " ".join(
+                    f"[embed: {e.title or 'sem título'}]" for e in msg.embeds)
+            linhas.append(f"**{stamp} · {quem}**\n{conteudo}\n")
+    except discord.Forbidden:
+        linhas.append("_não consegui ler o histórico_")
+    return "\n".join(linhas)[:180_000]
+
+
+async def _fechar_ticket(interaction: discord.Interaction, guild_id: int,
+                         quem: discord.Member):
+    thread = interaction.channel
+    guild = interaction.guild
+    cfg = await st.get_config_cached(guild_id, guild_name=guild.name)
+    tk = cfg["tickets"]
+
+    dono_id = await _dono_do_ticket(thread)
+    eh_dono_do_ticket = dono_id is not None and dono_id == interaction.user.id
+
+    if not (eh_dono_do_ticket or await _pode_atender(interaction.user, cfg)):
+        await _erro(interaction, "Só o dono do ticket ou um atendente pode fechar isso.")
+        return
+
+    await interaction.response.defer()
+    ticket_id = _canal_do_ticket(thread)
+
+    texto = await _montar_transcricao(thread)
+    mongo_db.salvar_transcricao(ticket_id, texto, atendente=str(quem),
+                                 mensagem_count=texto.count("\n"))
+    mongo_db.atualizar_ticket_status(ticket_id, "fechado", atendente=str(quem),
+                                     motivo="fechado por botão")
+
+    cabecalho = ("🔒 Ticket fechado"
+                 + (f" por {quem.mention}" if quem else "")
+                 + f"\nTranscrição salva. Valorize o atendimento!")
+    await thread.send(cabecalho)
+
+    if tk.get("rating_enabled"):
+        nota_view = RatingView(guild_id, ticket_id)
+        await thread.send(
+            render(tk.get("rating_question") or "Como foi o atendimento? Avalie de 1 a 5:",
+                   user=interaction.user, guild=guild, channel=thread),
+            view=nota_view,
+        )
+
+    aviso = render(
+        tk.get("close_message") or "Este ticket foi fechado. Use o painel para abrir outro.",
+        user=interaction.user, guild=guild, channel=thread,
+    )
+    if aviso:
+        await thread.send(aviso)
+
+    if tk.get("transcript_channel_id"):
+        destino = guild.get_channel(tk["transcript_channel_id"])
+        if destino is not None:
             try:
-                ticket = await suporte_channel.create_thread(name=channel_name, type=discord.ChannelType.private_thread)
-                await interaction.followup.send(f"Criei um ticket para você! Acesse aqui: {ticket.mention}", ephemeral=True)
-
-                creation_timestamp = int(time.time())
-                embed_admin = discord.Embed(
-                    title=f"Ticket de {tipoticket}",
-                    color=discord.Color.gold()
+                buf = BytesIO(texto.encode("utf-8", "ignore"))
+                await destino.send(
+                    content=f"📄 Transcrição de {thread.mention}",
+                    file=discord.File(buf, filename=f"aura-{thread.name}.txt"),
                 )
-                embed_admin.set_author(name=f"Atendimento - {interaction.guild.name}", icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-                embed_admin.add_field(name="Membro", value=interaction.user.mention, inline=True)
-                embed_admin.add_field(name="Aberto", value=f"<t:{creation_timestamp}:R>", inline=True)
-                embed_admin.set_footer(text=f"ID do Usuário: {interaction.user.id}")
-
-                try:
-                    from mongo_db import salvar_ticket
-                    salvar_ticket(interaction.user.id, interaction.user.name, tipoticket, "aberto")
-                except Exception:
-                    pass
-
-                await ticket.send(
-                    content=f"Novo ticket de {interaction.user.mention}. {atendente.mention}",
-                    embed=embed_admin,
-                    view=TicketAdminView()
-                )
-                
-                async with ticket.typing(): await asyncio.sleep(1.5)
-                await ticket.send(f"Oiiie {interaction.user.mention}, **tudo bem?**")
-                async with ticket.typing(): await asyncio.sleep(1.0)
-                await ticket.send(f"Seja muito bem-vindo(a) ao atendimento do clã **{interaction.guild.name}**!")
-                async with ticket.typing(): await asyncio.sleep(1.5)
-                await ticket.send(f"Daqui a pouco você será **atendido** por um {atendente.mention}.")
-                async with ticket.typing(): await asyncio.sleep(1.5)
-                await ticket.send(f"Enquanto isso, por favor, nos dê o máximo de detalhes sobre o seu caso.")
-                if mensagemcanal != "1":
-                    await ticket.send(f"```{mensagemcanal}```")
             except discord.Forbidden:
-                print(f"ERRO DE PERMISSÃO: O bot não tem permissão para criar tópicos (threads) no canal {suporte_channel.name} (ID: {id_canal_suporte}).")
-                await interaction.followup.send("Não foi possível criar o ticket por falta de permissões. Contate um administrador.", ephemeral=True)
-            except Exception as e:
-                print(f"ERRO DESCONHECIDO ao criar ticket: {e}")
-                await interaction.followup.send("Ocorreu um erro inesperado. Tente novamente mais tarde.", ephemeral=True)
+                pass
+
+    atraso = int(tk.get("close_delay_seconds") or 0)
+    if atraso > 0:
+        await asyncio.sleep(min(600, atraso))
+    try:
+        await thread.edit(archived=True, locked=True, name=f"fechado-{thread.name}")
+    except discord.Forbidden:
+        pass
+
+    mongo_db.registrar_auditoria(guild_id, guild.name, "ticket_fechado", "tickets",
+                                 quem, thread.name)
+    runtime.log("INFO", f"[{guild.name}] ticket fechado por {quem}", "tickets")
 
 
-# Canal onde as transcrições de tickets antigos estão armazenadas
-ID_CANAL_TRANSCRICOES = int(os.getenv("ID_CANAL_TRANSCRICOES", "1362127333636706466"))
+async def _cancelar_ticket(interaction: discord.Interaction):
+    await _erro(interaction, "Para encerrar, feche o ticket com o botão. "
+                             "Um staff pode ajudar se algo travar.")
 
-EMOJI_PARA_TIPO = {
-    "📜": "Dúvidas sobre Regras",
-    "⚔️": "Guerras e CWL",
-    "🛡️": "Doações",
-    "🚨": "Denúncia",
-    "🔨": "Apelo de Banimento",
-    "💡": "Sugestão",
-    "📈": "Recrutamento",
-    "❔": "Outros Assuntos",
-}
 
-#INICIO DA CLASSE
-class atendimento(commands.Cog):
+# ==========================================================================
+# Cog
+# ==========================================================================
+
+class Atendimento(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
-        self.client.add_view(DropdownSuporte())
-        self.client.add_view(TicketAdminView())
-        self._imported_tickets = False
+
+    # ---------- ciclo de vida ----------
+
+    async def cog_load(self):
+        self.registrar_views_iniciais()
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Cog atendimento (Clash of Clans) carregado.")
-        await self._importar_transcricoes_auto()
+        await self.registrar_views_iniciais()
 
-    async def _importar_transcricoes_auto(self):
-        if self._imported_tickets:
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild):
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        self.registrar_view(guild.id, (cfg.get("tickets") or {}).get("categories") or [])
+
+    async def registrar_views_iniciais(self):
+        for guild in self.client.guilds:
+            try:
+                cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+            except Exception:
+                continue
+            self.registrar_view(guild.id, (cfg.get("tickets") or {}).get("categories") or [])
+
+    def registrar_view(self, guild_id: int, categorias: List[Dict[str, Any]]):
+        """(Re)cria a view persistente do painel de um servidor."""
+        gid = int(guild_id)
+        anterior = _views_registradas.get(gid)
+        if anterior is not None:
+            try:
+                self.client.remove_view(anterior)
+            except Exception:
+                pass
+            anterior.categorias = []
+            _views_registradas.pop(gid, None)
+
+        cats = [c for c in (categorias or []) if c.get("key") and c.get("label")]
+        if not cats:
             return
-        try:
-            from mongo_db import get_db
-            db = get_db()
-            if db is None:
-                return
-            if db.tickets.count_documents({}) > 0:
-                self._imported_tickets = True
-                return
-            canal = self.client.get_channel(ID_CANAL_TRANSCRICOES)
-            if not canal:
-                print(f"Canal de transcrições {ID_CANAL_TRANSCRICOES} não encontrado.")
-                return
-            count = 0
-            async for msg in canal.history(limit=200):
-                if msg.attachments:
-                    for attach in msg.attachments:
-                        if attach.filename.endswith('.md'):
-                            nome_sem_ext = attach.filename[:-3]
-                            if '┃' in nome_sem_ext:
-                                emoji = nome_sem_ext.split('┃')[0]
-                                user_part = nome_sem_ext.split('┃', 1)[1]
-                                partes = user_part.rsplit('-', 1)
-                                if len(partes) == 2 and partes[1].isdigit():
-                                    user_id = partes[1]
-                                    user_name = partes[0]
-                                    tipo = EMOJI_PARA_TIPO.get(emoji, "Desconhecido")
-                                    from mongo_db import salvar_ticket
-                                    salvar_ticket(user_id, user_name, tipo, "fechado", "Importado automaticamente")
-                                    count += 1
-            print(f"Importação automática: {count} tickets salvos no MongoDB.")
-            self._imported_tickets = True
-        except Exception as e:
-            print(f"Erro na importação automática de tickets: {e}")
-  
-    #GRUPO PAINEIS
-    painel=app_commands.Group(name="painel",description="Comandos de paineis de atendimento do bot.")
+        view = TicketPanelView(gid, cats)
+        self.client.add_view(view)
+        _views_registradas[gid] = view
 
-    @painel.command(name='suporte', description='⚔️ Crie um painel de suporte para o clã.')
-    @commands.has_permissions(manage_guild=True)
-    async def suporte(self,interaction: discord.Interaction):
-        await interaction.response.send_message("Painel de suporte criado!",ephemeral=True)
-        
-        embed = discord.Embed(colour=discord.Color.dark_gold(), title=f"🛡️ Central de Atendimento - {interaction.guild.name} 🛡️", description="Bem-vindo à central de ajuda! Use o menu abaixo para selecionar o motivo do seu contato e abrir um ticket. Um líder ou co-líder irá te ajudar.")
-        if interaction.guild.icon: embed.set_image(url=interaction.guild.icon.url)
-        embed.set_footer(text=f"Atendimento do Clã {interaction.guild.name}")
-        await interaction.channel.send(embed=embed,view=DropdownSuporte()) 
+    async def recarregar_view(self, guild_id: int):
+        cfg = await st.get_config_cached(guild_id)
+        self.registrar_view(int(guild_id),
+                            (cfg.get("tickets") or {}).get("categories") or [])
 
-    #GRUPO DE ATENDIMENTO
-    atendi=app_commands.Group(name="atendimento",description="Comandos de atendimento do bot.")
+    # ---------- comandos ----------
 
-    @atendi.command(name="encerrar", description='✉️ Envia a mensagem final e o botão para fechar um ticket.')
-    @commands.has_permissions(manage_roles=True)
-    async def encerrar(self, interaction: discord.Interaction):
+    painel = app_commands.Group(name="painel", description="Painéis do AURA.")
+
+    @painel.command(name="enviar", description="Publica o painel de tickets neste canal.")
+    @commands.guild_only()
+    @commands.has_permissions(manage_channels=True)
+    async def painel_enviar(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        pronto, falta = st.tickets_ready(cfg)
+        if not st.module_enabled(cfg, "tickets"):
+            return await _erro(interaction, "Módulo de tickets desligado neste servidor.")
+        if not pronto:
+            return await _erro(interaction, f"Falta configurar: {falta}. Use o painel web.")
+
+        tk = cfg["tickets"]
+        cats = tk["categories"]
+
+        view = TicketPanelView(guild.id, cats)
+        self.registrar_view(guild.id, cats)
+
+        cor = discord.Color(int(str(tk.get("panel_color") or "#2b6cb0").lstrip("#"), 16))
+        embed = discord.Embed(
+            title=tk.get("panel_title") or f"Atendimento · {guild.name}",
+            description=(tk.get("panel_description")
+                         or "Escolha abaixo o assunto do seu ticket. Um staff atende em breve."),
+            color=cor,
+        )
+        if tk.get("panel_image_url"):
+            embed.set_image(url=tk["panel_image_url"])
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+
+        linhas = []
+        for cat in cats:
+            staff_txt = ""
+            if cat.get("staff_role_id"):
+                staff_txt = f"\n└ staff: <@&{cat['staff_role_id']}>"
+            linhas.append(f"{cat.get('emoji') or '🎫'} **{cat.get('label')}**"
+                          + (f" — {cat['description'][:120]}" if cat.get("description") else "")
+                          + staff_txt)
+        embed.add_field(name="Categorias", value="\n".join(linhas)[:4000] or "—", inline=False)
+        embed.set_footer(text=f"AURA · {len(cats)} categoria(s) · {guild.name}")
+
+        await interaction.response.send_message(embed=embed, view=view)
+        _painel_ids[guild.id] = interaction.channel.id
+        runtime.log("INFO", f"[{guild.name}] painel de tickets publicado em "
+                            f"#{interaction.channel}", "tickets")
+
+    @painel.command(name="remover", description="Apaga o embed de painel deste canal.")
+    @commands.guild_only()
+    @commands.has_permissions(manage_channels=True)
+    async def painel_remover(self, interaction: discord.Interaction):
+        apagados = 0
+        async for msg in interaction.channel.history(limit=30):
+            if msg.author.id == self.client.user.id and msg.embeds and \
+                    msg.embeds[0].title and "Atendimento" in msg.embeds[0].title:
+                await msg.delete()
+                apagados += 1
+                if apagados >= 1:
+                    break
+        _painel_ids.pop(interaction.guild.id, None)
+        await interaction.response.send_message(
+            f"🗑️ {apagados} painel(is) removido(s).", ephemeral=True)
+
+    @painel.command(name="atualizar", description="Reposta o painel com a config atual.")
+    @commands.guild_only()
+    @commands.has_permissions(manage_channels=True)
+    async def painel_atualizar(self, interaction: discord.Interaction):
+        await self.recarregar_view(interaction.guild.id)
+        cfg = await st.get_config_cached(interaction.guild.id,
+                                         guild_name=interaction.guild.name)
+        await interaction.response.send_message(
+            "🔄 Painel atualizado com as categorias atuais do painel web.\n"
+            f"Categorias: **{len(cfg['tickets']['categories'])}**.\n"
+            "Use `/painel remover` e `/painel enviar` para republish.", ephemeral=True)
+
+    atendimento = app_commands.Group(name="atendimento", description="Gestão de tickets.")
+
+    @atendimento.command(name="fechar", description="Fecha um ticket por ID de thread.")
+    @commands.guild_only()
+    @app_commands.describe(canal="O ticket (thread) a fechar")
+    async def atendimento_fechar(self, interaction: discord.Interaction,
+                                  canal: discord.Thread):
+        await _fechar_ticket(interaction, interaction.guild.id, interaction.user)
+
+    @atendimento.command(name="assumir", description="Marca o ticket como atendido por você.")
+    @commands.guild_only()
+    async def atendimento_assumir(self, interaction: discord.Interaction):
         if not isinstance(interaction.channel, discord.Thread):
-            return await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket.", ephemeral=True)
+            return await _erro(interaction, "Rode este comando dentro do ticket.")
+        ticket_id = _canal_do_ticket(interaction.channel)
+        mongo_db.atualizar_ticket_status(ticket_id, "atendendo", str(interaction.user))
+        await interaction.response.send_message(
+            f"✅ Ticket marcado como seu.", ephemeral=True)
 
-        membro_id_str = interaction.channel.name.split('-')[-1]
+    @atendimento.command(name="listar", description="Lista os tickets deste servidor.")
+    @commands.guild_only()
+    @app_commands.describe(limite="Quantos listar (padrão 10)")
+    async def atendimento_listar(self, interaction: discord.Interaction, limite: int = 10):
+        itens = mongo_db.listar_tickets(guild_id=interaction.guild.id,
+                                         limite=max(1, min(50, limite)))
+        if not itens:
+            return await _erro(interaction, "Nenhum ticket registrado aqui ainda.")
+        linhas = []
+        for t in itens:
+            status = t.get("status", "?")
+            marca = {"aberto": "🟢", "atendendo": "🟡", "fechado": "⚪"}.get(status, "⚫")
+            linhas.append(f"{marca} **{t.get('tipo')}** · {t.get('user_name')} "
+                          f"· {status} · <t:{int(t.get('ts', 0))}:R>")
+        embed = discord.Embed(
+            title=f"🎫 Tickets · {interaction.guild.name}",
+            description="\n".join(linhas)[:3800],
+            color=discord.Color.blurple(),
+        )
+        contagem = mongo_db.contar_tickets(interaction.guild.id)
+        embed.set_footer(text=f"abertos: {contagem.get('aberto', 0)} · "
+                              f"atendendo: {contagem.get('atendendo', 0)} · "
+                              f"fechados: {contagem.get('fechado', 0)}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @atendimento.command(name="abrir", description="Abre um ticket para um membro (staff).")
+    @commands.guild_only()
+    @app_commands.describe(membro="Para quem é o ticket", assunto="Palavra que identifica a categoria")
+    @commands.has_permissions(manage_channels=True)
+    async def atendimento_abrir(self, interaction: discord.Interaction,
+                                membro: discord.Member, assunto: str = None):
+        cfg = await st.get_config_cached(interaction.guild.id,
+                                         guild_name=interaction.guild.name)
+        pronto, falta = st.tickets_ready(cfg)
+        if not pronto:
+            return await _erro(interaction, f"Falta configurar: {falta}.")
+
+        cats = cfg["tickets"]["categories"]
+        chave = cats[0]["key"]
+        if assunto:
+            achada = next((c for c in cats if assunto.lower() in c["label"].lower()), None)
+            if achada:
+                chave = achada["key"]
+
+        sup_id = cfg["tickets"].get("support_channel_id")
+        suporte = interaction.guild.get_channel(sup_id) if sup_id else None
+        if suporte is None or not isinstance(suporte, discord.TextChannel):
+            return await _erro(interaction, "Canal de suporte não configurado.")
+
+        numero = mongo_db.contar_tickets(interaction.guild.id).get("total", 0) + 1
+        nome = _nome_da_thread(membro, numero)
         try:
-            membro = interaction.guild.get_member(int(membro_id_str))
-            membro_mention = membro.mention if membro else f"(ID: {membro_id_str})"
-        except ValueError:
-            membro_mention = "(usuário não encontrado)"
+            thread = await suporte.create_thread(
+                name=nome, type=discord.ChannelType.private_thread,
+                reason=f"AURA ticket aberto por {interaction.user}")
+        except discord.HTTPException as exc:
+            return await _erro(interaction, f"Não consegui criar a thread: {exc}")
 
-        await interaction.response.send_message("Enviando mensagem de encerramento...", ephemeral=True)
-        
-        async with interaction.channel.typing(): await asyncio.sleep(1.5)
-        await interaction.channel.send(f"Olá novamente {membro_mention}!")
-        async with interaction.channel.typing(): await asyncio.sleep(2)
-        await interaction.channel.send(f"Parece que seu atendimento está chegando ao fim.")
-        async with interaction.channel.typing(): await asyncio.sleep(2)
-        await interaction.channel.send(f"O clã **{interaction.guild.name}** agradece o contato e esperamos que seu problema tenha sido resolvido!")
-        
-        await interaction.channel.send("Você pode **Fechar o Ticket** para arquivar a conversa, ou **Cancelar** para continuar.", view=CloseTicketView())
+        ticket_id = mongo_db.salvar_ticket(
+            membro.id, membro.name, next(c["label"] for c in cats if c["key"] == chave),
+            "aberto", guild_id=interaction.guild.id, guild_name=interaction.guild.name,
+            ticket_id=str(thread.id), channel_name=thread.name, categoria_key=chave,
+            avatar=str(membro.display_avatar.url),
+        )
+        if ticket_id:
+            await thread.edit(topic=f"aura-ticket:{ticket_id}")
 
-    @atendi.command(name="adicionar",description='➕ Adicione um membro ao ticket.')
-    @app_commands.describe(membro="O membro que você deseja adicionar.")
-    @commands.has_permissions(manage_roles=True)
-    async def adicionar(self,interaction: discord.Interaction,membro: discord.Member):
-        if isinstance(interaction.channel, discord.Thread):
-            await interaction.channel.add_user(membro)
-            await interaction.response.send_message(embed=discord.Embed(colour=discord.Color.green(), title="✅ Membro Adicionado", description=f"{membro.mention} foi adicionado a este ticket."))
-        else:
-            await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket.",ephemeral=True)
+        embed = discord.Embed(
+            title=f"{next(c['emoji'] for c in cats if c['key'] == chave)} "
+                  f"{next(c['label'] for c in cats if c['key'] == chave)}",
+            description=f"Ticket aberto por **{interaction.user.mention}** para {membro.mention}.",
+            color=discord.Color.blurple(),
+        )
+        # O campo "Membro" é como o AURA descobre o dono do ticket depois.
+        embed.add_field(name="Membro", value=f"{membro.mention} · `{membro.id}`")
+        try:
+            await thread.add_user(membro)
+        except discord.HTTPException:
+            pass
+        await thread.send(embed=embed, view=TicketAdminView(interaction.guild.id))
+        await thread.send(view=StaffTicketView(interaction.guild.id), delete_after=15)
+        await interaction.response.send_message(f"✅ Ticket criado: {thread.mention}", ephemeral=True)
 
-    @atendi.command(name="remover",description='➖ Remove um membro do ticket.')
-    @app_commands.describe(membro="O membro que você deseja remover.")
-    @commands.has_permissions(manage_roles=True)
-    async def remover(self,interaction: discord.Interaction,membro: discord.Member):
-        if isinstance(interaction.channel, discord.Thread):
-            await interaction.channel.remove_user(membro)
-            await interaction.response.send_message(embed=discord.Embed(colour=discord.Color.red(), title="❌ Membro Removido", description=f"{membro.mention} foi removido deste ticket."))
-        else:
-            await interaction.response.send_message("Este comando só pode ser usado em um canal de ticket.",ephemeral=True)
-
-    @atendi.command(name="importar-transcricoes", description="[Admin] Importa transcrições antigas para o MongoDB.")
+    @atendimento.command(name="importar", description="Importa threads antigas como tickets fechados.")
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
-    async def importar_transcricoes(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        try:
-            from mongo_db import get_db, salvar_ticket
-            db = get_db()
-            if db is None:
-                await interaction.followup.send("❌ MongoDB não está conectado.", ephemeral=True)
-                return
-            canal = self.client.get_channel(ID_CANAL_TRANSCRICOES)
-            if not canal:
-                await interaction.followup.send(f"❌ Canal de transcrições ({ID_CANAL_TRANSCRICOES}) não encontrado.", ephemeral=True)
-                return
-            count = 0
-            async for msg in canal.history(limit=500):
-                if msg.attachments:
-                    for attach in msg.attachments:
-                        if attach.filename.endswith('.md'):
-                            nome_sem_ext = attach.filename[:-3]
-                            if '┃' in nome_sem_ext:
-                                emoji = nome_sem_ext.split('┃')[0]
-                                user_part = nome_sem_ext.split('┃', 1)[1]
-                                partes = user_part.rsplit('-', 1)
-                                if len(partes) == 2 and partes[1].isdigit():
-                                    user_id = partes[1]
-                                    user_name = partes[0]
-                                    tipo = EMOJI_PARA_TIPO.get(emoji, "Desconhecido")
-                                    salvar_ticket(user_id, user_name, tipo, "fechado", "Importado manualmente")
-                                    count += 1
-            await interaction.followup.send(f"✅ **{count}** tickets importados do canal de transcrições para o MongoDB.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Erro ao importar: {e}", ephemeral=True)
+    async def atendimento_importar(self, interaction: discord.Interaction):
+        cfg = await st.get_config_cached(interaction.guild.id,
+                                         guild_name=interaction.guild.name)
+        sup_id = cfg["tickets"].get("support_channel_id")
+        suporte = interaction.guild.get_channel(sup_id) if sup_id else None
+        if suporte is None or not isinstance(suporte, discord.TextChannel):
+            return await _erro(interaction, "Canal de suporte não configurado.")
 
-async def setup(client:commands.Bot):
-    await client.add_cog(atendimento(client))
-    if _var_faltando:
-        print(f"⚡ Cog atendimento CARREGADO, mas recursos limitados. Faltam: {_var_faltando}")
-    else:
-        print("✅ Cog atendimento carregado com sucesso.")
+        await interaction.response.defer(ephemeral=True)
+        importadas = 0
+        for th in suporte.threads:
+            if not CATEGORIA_RE.match(th.name or ""):
+                continue
+            if mongo_db.ticket_aberto_do_usuario(interaction.guild.id, _user_do_ticket(th.name)):
+                continue
+            mongo_db.salvar_ticket(
+                _user_do_ticket(th.name), f"usuário {_user_do_ticket(th.name)}",
+                "Importado", "fechado", atendente="Importado automaticamente",
+                guild_id=interaction.guild.id, guild_name=interaction.guild.name,
+                channel_name=th.name,
+            )
+            importadas += 1
+
+        await interaction.followup.send(
+            f"✅ {importadas} thread(s) antiga(s) importada(s).", ephemeral=True)
+
+    @atendimento.command(name="stats", description="Números de tickets deste servidor.")
+    @commands.guild_only()
+    async def atendimento_stats(self, interaction: discord.Interaction):
+        g = interaction.guild.id
+        contagem = mongo_db.contar_tickets(g)
+        feedback = mongo_db.media_feedback(g)
+        embed = discord.Embed(title=f"📊 Tickets · {interaction.guild.name}",
+                              color=discord.Color.green())
+        embed.add_field(name="Total", value=str(contagem.get("total", 0)), inline=True)
+        embed.add_field(name="Abertos", value=str(contagem.get("aberto", 0)), inline=True)
+        embed.add_field(name="Atendendo", value=str(contagem.get("atendendo", 0)), inline=True)
+        embed.add_field(name="Fechados", value=str(contagem.get("fechado", 0)), inline=True)
+        nota = feedback.get("media") or 0
+        embed.add_field(name="Avaliação",
+                        value=f"{nota:.1f}/5 ⭐\n{feedback.get('total', 0)} resposta(s)",
+                        inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+def _user_do_ticket(nome: str) -> str:
+    partes = (nome or "").split("-")
+    return partes[1] if len(partes) >= 2 else "desconhecido"
+
+
+async def setup(client: commands.Bot) -> None:
+    await client.add_cog(Atendimento(client))

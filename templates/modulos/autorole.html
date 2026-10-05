@@ -1,0 +1,54 @@
+{% from "modulo_form.html" import campo_canal, campo_cargo, campo_numero, acao_validar, ajuda_placeholders, salvar with context %}
+
+{% set ar = cfg.autorole %}
+
+<form method="post" action="{{ url_for('salvar_generico', modulo='autorole', guild=guild.id) }}">
+  <div class="card-aura card mb-4">
+    <div class="card-header fw-semibold">
+      <div class="form-check form-switch d-inline-block me-2">
+        <input class="form-check-input" type="checkbox" name="enabled" id="ar_on"
+               {{ 'checked' if ar.enabled }}>
+      </div>
+      <label class="form-check-label fw-semibold mb-0" for="ar_on">Liberação por palavra-chave</label>
+    </div>
+    <div class="card-body">
+      <p class="placeholder-doc">
+        O membro escreve a palavra no canal indicado e recebe o cargo de acesso.
+      </p>
+      <div class="row g-3">
+        <div class="col-md-6">{{ campo_canal('channel_id', 'Canal de liberação', ar.channel_id,
+          'Normalmente um canal de regras.') }}</div>
+        <div class="col-md-3">
+          <label class="form-label" for="keyword">Palavra-chave</label>
+          <input class="form-control mono" name="keyword" id="keyword" value="{{ ar.keyword }}"
+                 maxlength="60">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Atraso para apagar (s)</label>
+          <input type="number" min="0" max="300" class="form-control" name="delete_delay_seconds"
+                 value="{{ ar.delete_delay_seconds }}">
+        </div>
+        <div class="col-md-4">{{ campo_cargo('give_role_id', 'Cargo a entregar', ar.give_role_id) }}</div>
+        <div class="col-md-4">{{ campo_cargo('deny_role_id', 'Cargo a remover', ar.deny_role_id,
+          'Opcional. Tira o cargo de espera antes de liberar.') }}</div>
+        <div class="col-md-4">{{ campo_canal('log_channel_id', 'Canal de logs', ar.log_channel_id) }}</div>
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="delete_message" id="ar_del"
+                   {{ 'checked' if ar.delete_message }}>
+            <label class="form-check-label" for="ar_del">Apagar a mensagem do membro</label>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Mensagem no canal</label>
+          <input class="form-control" name="welcome_message" value="{{ ar.welcome_message }}"
+                 maxlength="500">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-aura px-4">
+    <i class="bi bi-check2 me-1"></i>Salvar liberação
+  </button>
+</form>

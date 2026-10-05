@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block titulo %}Ticket{% endblock %}
+
+{% block conteudo %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tickets', guild=guild.id) }}">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h1 class="h4 mb-0 text-white">{{ ticket.user_name or ticket.user_id }}</h1>
+  <span class="badge {{ {'aberto': 'chip-warn', 'atendendo': 'chip-on',
+                       'fechado': 'chip-off'}.get(ticket.status, 'chip-off') }}">
+    {{ ticket.status }}
+  </span>
+  <form method="post" class="ms-auto"
+        action="{{ url_for('ticket_apagar', ticket_id=ticket._id) }}"
+        onsubmit="return confirm('Remover este ticket do banco?')">
+    <button class="btn btn-sm btn-outline-danger">
+      <i class="bi bi-trash me-1"></i>Remover registro
+    </button>
+  </form>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card-aura card">
+      <div class="card-header fw-semibold">Detalhes</div>
+      <div class="card-body">
+        <table class="table table-sm table-aura mb-0">
+          <tbody>
+            <tr><td class="text-muted">Membro</td><td class="text-end">{{ ticket.user_name }}</td></tr>
+            <tr><td class="text-muted">ID</td><td class="text-end mono">{{ ticket.user_id }}</td></tr>
+            <tr><td class="text-muted">Categoria</td><td class="text-end">{{ ticket.tipo or '—' }}</td></tr>
+            <tr><td class="text-muted">Atendente</td><td class="text-end">{{ ticket.atendente or '—' }}</td></tr>
+            <tr><td class="text-muted">Canal</td><td class="text-end mono placeholder-doc">{{ ticket.channel_name or '—' }}</td></tr>
+            <tr><td class="text-muted">Aberto</td><td class="text-end mono">{{ ticket.data|datahora }}</td></tr>
+            {% if ticket.fechado_em %}
+            <tr><td class="text-muted">Fechado</td>
+                <td class="text-end mono">{{ ticket.fechado_em|datahora }}</td></tr>
+            {% endif %}
+            <tr><td class="text-muted">Mensagens</td><td class="text-end">{{ ticket.mensagem_count or 0 }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card-aura card">
+      <div class="card-header fw-semibold">Transcrição</div>
+      <div class="card-body">
+        {% if ticket.transcript %}
+        <pre class="mono mb-0 scroll-alto" style="white-space:pre-wrap">{{ ticket.transcript }}</pre>
+        {% else %}
+        <p class="text-muted mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          Sem transcrição. Ela só é salva quando o ticket fecha e existe um canal de
+          transcrição configurado.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

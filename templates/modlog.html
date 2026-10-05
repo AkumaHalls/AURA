@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block titulo %}Modlog{% endblock %}
+
+{% block conteudo %}
+<h1 class="h4 text-white mb-4"><i class="bi bi-shield-check me-2"></i>Modlog</h1>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="stat p-3">
+      <div class="num">{{ stats.total }}</div>
+      <div class="rot">infrações em {{ stats.periodo_dias }}d</div>
+    </div>
+  </div>
+  {% for filtro, n in stats.por_filtro.items()|sort(attribute='1', reverse=True) %}
+  {% if loop.index <= 3 %}
+  <div class="col-6 col-lg-3">
+    <div class="stat p-3">
+      <div class="num">{{ n }}</div>
+      <div class="rot">{{ filtro }}</div>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <form class="row g-2 mb-3" method="get">
+      <input type="hidden" name="guild" value="{{ guild.id }}">
+      <div class="col-md-4">
+        <input class="form-control" name="busca" value="{{ busca }}" placeholder="alvo, ação ou motivo">
+      </div>
+      <div class="col-md-4">
+        <select class="form-select" name="acao">
+          <option value="">todas as ações</option>
+          {% for a in stats.por_punicao.keys()|list %}
+          <option value="{{ a }}" {{ 'selected' if acao == a }}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-outline-secondary"><i class="bi bi-search"></i></button>
+      </div>
+    </form>
+
+    <div class="card-aura card">
+      <div class="card-body p-0">
+        {% if itens %}
+        <div class="table-responsive scroll-alto">
+          <table class="table table-aura table-hover mb-0">
+            <thead>
+              <tr><th>Quando</th><th>Ação</th><th>Alvo</th><th>Moderador</th><th>Motivo</th></tr>
+            </thead>
+            <tbody>
+              {% for m in itens %}
+              <tr>
+                <td class="mono placeholder-doc">{{ m.date|datahora }}</td>
+                <td><span class="badge chip-off">{{ m.acao }}</span></td>
+                <td>{{ m.alvo or '—' }}<div class="placeholder-doc mono">{{ m.alvo_id or '' }}</div></td>
+                <td>{{ m.mod_name or m.mod_id or 'sistema' }}</td>
+                <td class="placeholder-doc">{{ (m.motivo or '')[:80] }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-center text-muted py-5 mb-0">Nada registrado ainda.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card-aura card mb-4">
+      <div class="card-header fw-semibold">Mais reincidentes</div>
+      <div class="card-body">
+        {% if top %}
+        {% for t in top %}
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="badge chip-off">{{ loop.index }}</span>
+          <div class="flex-grow-1">
+            <div>{{ t._id.user_name or t._id.user_id }}</div>
+            <div class="placeholder-doc mono">{{ t._id.user_id }}</div>
+          </div>
+          <span class="badge chip-warn">{{ t.total }}</span>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="placeholder-doc mb-0">Ninguém reincidiu no período.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card-aura card">
+      <div class="card-header fw-semibold">Punições aplicadas</div>
+      <div class="card-body">
+        {% if stats.por_punicao %}
+        {% for p, n in stats.por_punicao.items()|sort(attribute='1', reverse=True) %}
+        <div class="d-flex justify-content-between mb-1">
+          <span>{{ p }}</span><span class="mono">{{ n }}</span>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="placeholder-doc mb-0">Nada por aqui.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block titulo %}Auditoria{% endblock %}
+
+{% block conteudo %}
+<h1 class="h4 text-white mb-1">Auditoria e logs</h1>
+<p class="text-muted mb-4">
+  Quem mexeu em quê, e o que o processo do bot andou fazendo.
+</p>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card-aura card">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-pencil-square me-2"></i>Mudanças de configuração
+        {% if escopo == 'servidor' %}
+        <span class="badge chip-off ms-1">só {{ guild.name }}</span>
+        {% else %}
+        <span class="badge chip-off ms-1">todos os servidores</span>
+        {% endif %}
+      </div>
+      <div class="card-body p-0">
+        {% if itens %}
+        <div class="table-responsive scroll-alto">
+          <table class="table table-aura table-hover mb-0">
+            <thead><tr><th>Quando</th><th>Servidor</th><th>Ação</th><th>Autor</th></tr></thead>
+            <tbody>
+              {% for a in itens %}
+              <tr>
+                <td class="mono placeholder-doc">{{ a.date|datahora }}</td>
+                <td>{{ a.guild_name or 'painel' }}</td>
+                <td><code>{{ a.acao }}</code></td>
+                <td class="placeholder-doc">{{ a.autor }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-center text-muted py-5 mb-0">Nada registrado.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card-aura card">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-terminal me-2"></i>Log do processo
+      </div>
+      <div class="card-body">
+        {% if bot_logs %}
+        <pre class="mono mb-0 scroll-alto" style="white-space:pre-wrap">{{ bot_logs }}</pre>
+        {% else %}
+        <p class="placeholder-doc mb-0">Sem logs no buffer.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,52 +1,55 @@
+# AURA · bot + painel web
+#
+# Subir com:  docker compose up -d --build
+# O painel fica em http://SEU_IP:2501
+#
+# O `.env` é lido pelo Compose para preencher as variáveis abaixo. Ele NÃO é
+# copiado para dentro da imagem.
+
 services:
   bot:
     build: .
     container_name: aura-bot
     restart: unless-stopped
     ports:
-      - "2501:2501"
+      # 127.0.0.1 = painel só acessível por SSH/Proxy.
+      # Troque para "2501:2501" se quiser expor direto e usar HTTPS por proxy.
+      - "127.0.0.1:2501:2501"
+    env_file:
+      - .env
     environment:
-      # Discord
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - DONO_ID=${DONO_ID}
-      - OWNER_ID=${OWNER_ID}
-      - TEST_GUILD_ID=${TEST_GUILD_ID}
+      TZ: America/Sao_Paulo
+      WEB_PANEL_HOST: 0.0.0.0
+      WEB_PANEL_PORT: "2501"
+      MONGO_DB_NAME: ${MONGO_DB_NAME:-aura_bot}
+      # Bancos de perguntas por servidor num volume, não na imagem.
+      AURA_DATA_DIR: /app/dados
+    volumes:
+      - aura-dados:/app/dados
+    depends_on:
+      mongo:
+        condition: service_healthy
 
-      # Clash of Clans API
-      - COC_EMAIL=${COC_EMAIL}
-      - COC_PASSWORD=${COC_PASSWORD}
-      - CLAN_TAG=${CLAN_TAG}
+  mongo:
+    image: mongo:7
+    container_name: aura-mongo
+    restart: unless-stopped
+    command: ["mongod", "--bind_ip_all"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-aura}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?defina MONGO_PASSWORD no .env}
+    volumes:
+      - mongo-dados:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # Sem porta publicada de propósito: o Mongo só é acessado pela rede interna
+    # do Compose. Se precisar acessar de fora, exponha atrás de autenticação e
+    # TLS — nunca um Mongo público sem senha.
 
-      # MongoDB / Web Panel
-      # Se o MongoDB roda nativo na VPS, use 127.0.0.1 (e rode o bot fora do Docker)
-      # Ou se quiser Docker, use o IP do host (ex: 172.17.0.1) ou um serviço mongodb externo
-      - MONGO_URI=${MONGO_URI}
-      - MONGO_DB_NAME=${MONGO_DB_NAME:-aura_bot}
-      - WEB_PANEL_PASSWORD=${WEB_PANEL_PASSWORD}
-
-      # Atendimento (IDs Discord)
-      - id_cargo_atendente=${id_cargo_atendente}
-      - id_canal_suporte=${id_canal_suporte}
-      - id_categoria_staff=${id_categoria_staff}
-      - id_servidor_bh=${id_servidor_bh}
-      - id_canal_logs_bh=${id_canal_logs_bh}
-      - id_canal_avaliacao=${id_canal_avaliacao}
-      - id_servidor_tribunal=${id_servidor_tribunal}
-      - id_canal_logs_tri=${id_canal_logs_tri}
-      - ID_CANAL_TRANSCRICOES=${ID_CANAL_TRANSCRICOES}
-
-      # Autorole
-      - CANAL_REGISTRO_ID=${CANAL_REGISTRO_ID}
-      - CARGO_MEMBRO_ID=${CARGO_MEMBRO_ID}
-      - CARGO_BANIDO_ID=${CARGO_BANIDO_ID}
-
-      # ClashLog Manager (registro, cargos, etc.)
-      - REGISTRATION_CHANNEL_ID=${REGISTRATION_CHANNEL_ID}
-      - LOG_CHANNEL_ID=${LOG_CHANNEL_ID}
-      - APPROVAL_LOG_CHANNEL_ID=${APPROVAL_LOG_CHANNEL_ID}
-      - COC_MEMBER_ROLE_ID=${COC_MEMBER_ROLE_ID}
-      - COC_ELDER_ROLE_ID=${COC_ELDER_ROLE_ID}
-      - COC_COLEADER_ROLE_ID=${COC_COLEADER_ROLE_ID}
-      - KICK_MESSAGE=${KICK_MESSAGE}
-
-      - TZ=America/Sao_Paulo
+volumes:
+  aura-dados:
+  mongo-dados:
