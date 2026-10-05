@@ -45,7 +45,7 @@ async def _coc():
     global _client
     if _client is not None:
         return _client
-    if not (COC_EMAIL and COOC_PASSWORD):
+    if not (COC_EMAIL and COC_PASSWORD):
         return None
     try:
         from coc import Client as CocClient
@@ -100,7 +100,7 @@ class StatusCla(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        if not (COC_EMAIL and COOC_PASSWORD):
+        if not (COC_EMAIL and COC_PASSWORD):
             runtime.log("AVISO", "StatusCla: sem credenciais, inativo", "clash")
             return
         if not self.update_status.is_running():
@@ -239,7 +239,7 @@ class StatusCla(commands.Cog):
                           color=discord.Color.blurple())
         e.add_field(name="Clã", value=f"`{coc.get('clan_tag') or '—'}`", inline=True)
         e.add_field(name="Ativo", value="sim" if coc.get("enabled") else "não", inline=True)
-        e.add_field(name="Credenciais", value="ok" if (COC_EMAIL and COOC_PASSWORD)
+        e.add_field(name="Credenciais", value="ok" if (COC_EMAIL and COC_PASSWORD)
                     else "faltando no .env", inline=True)
         linhas = []
         for chave, canal_id in canais.items():

@@ -873,12 +873,21 @@ class Moderacao(commands.Cog):
 
 
 class ConfigModView(discord.ui.View):
-    """Painel rápido de configuração da moderação dentro do Discord."""
+    """
+    Painel rápido de configuração da moderação dentro do Discord.
+
+    Registrada com `add_view`, então precisa ser persistente: todo item tem
+    `custom_id` e a view não tem timeout. Sem isso o `add_view` levanta
+    ValueError e o cog inteiro não carrega.
+    """
 
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Meu painel", style=discord.ButtonStyle.primary, emoji="⚙️")
+    @discord.ui.button(
+        label="Meu painel", style=discord.ButtonStyle.primary, emoji="⚙️",
+        custom_id="aura:mod:painel",
+    )
     async def painel(self, interaction: discord.Interaction, button: discord.ui.Button):
         cfg = await st.get_config_cached(interaction.guild.id, guild_name=interaction.guild.name)
         mod_cfg = cfg.get("moderation") or {}

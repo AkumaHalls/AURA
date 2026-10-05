@@ -544,7 +544,9 @@ class Atendimento(commands.Cog):
     # ---------- ciclo de vida ----------
 
     async def cog_load(self):
-        self.registrar_views_iniciais()
+        # No cog_load não há servidor conectado ainda, então só o on_ready
+        # registra as views. Chamar aqui deixaria uma corrotina sem espera.
+        pass
 
     @commands.Cog.listener()
     async def on_ready(self):

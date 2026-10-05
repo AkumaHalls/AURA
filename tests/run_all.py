@@ -15,6 +15,8 @@ TESTES = [
     ("templates", "test_templates.py"),
     ("runtime", "test_runtime.py"),
     ("provas", "test_provas_retomada.py"),
+    ("views persistentes", "test_views_persistentes.py"),
+    ("variaveis de ambiente", "test_env_vars.py"),
     ("moderacao", "test_moderacao.py"),
     ("painel", "test_painel.py"),
     ("painel post", "test_painel_post.py"),

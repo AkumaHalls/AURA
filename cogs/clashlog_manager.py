@@ -8,7 +8,7 @@ O que este módulo faz:
     /clash verificar  confere se cada membro do clã tem o cargo certo aqui
     /clash status     mostra a configuração deste servidor
 
-Credenciais vêm do .env (COC_EMAIL / COOC_PASSWORD), porque são sensíveis e
+Credenciais vêm do .env (COC_EMAIL / COC_PASSWORD), porque são sensíveis e
 compartilhadas. O que é específico de cada servidor — tag do clã, canais,
 cargos e mensagem de remoção — vem da config no painel web.
 """
@@ -48,7 +48,7 @@ async def _coc():
     global _client
     if _client is not None:
         return _client
-    if not (COC_EMAIL and COOC_PASSWORD):
+    if not (COC_EMAIL and COC_PASSWORD):
         return None
     try:
         from coc import Client as CocClient
@@ -125,7 +125,7 @@ class ClashLogManager(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        if not (COC_EMAIL and COOC_PASSWORD):
+        if not (COC_EMAIL and COC_PASSWORD):
             runtime.log("AVISO", "Clash: sem COC_EMAIL/COC_PASSWORD, módulo inativo", "clash")
             return
         if not self.verify_members.is_running():
@@ -252,7 +252,7 @@ class ClashLogManager(commands.Cog):
     @tasks.loop(hours=1)
     async def verify_members(self):
         await self.client.wait_until_ready()
-        if not (COC_EMAIL and COOC_PASSWORD):
+        if not (COC_EMAIL and COC_PASSWORD):
             return
         for guild, coc in await self._servidores_com_clash():
             try:
@@ -295,7 +295,7 @@ class ClashLogManager(commands.Cog):
             e.add_field(name=rotulo, value=cargo.mention if cargo else "—", inline=True)
         e.add_field(
             name="Credenciais da API",
-            value="definidas no .env" if (COC_EMAIL and COOC_PASSWORD)
+            value="definidas no .env" if (COC_EMAIL and COC_PASSWORD)
                   else "⚠️ faltam COC_EMAIL/COC_PASSWORD no .env",
             inline=False,
         )
@@ -315,7 +315,7 @@ class ClashLogManager(commands.Cog):
         if not pronto:
             return await interaction.response.send_message(
                 f"❌ Falta configurar: {falta}. Use o painel web.", ephemeral=True)
-        if not (COC_EMAIL and COOC_PASSWORD):
+        if not (COC_EMAIL and COC_PASSWORD):
             return await interaction.response.send_message(
                 "❌ Sem COC_EMAIL/COC_PASSWORD no .env.", ephemeral=True)
 
