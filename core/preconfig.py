@@ -31,7 +31,24 @@ MODULOS_PADRAO = ("tickets", "moderacao", "autorole", "boas_vindas",
 
 #: Variáveis que apontam para o servidor do Clash (o perfil `coc`).
 ENV_GUILDS_COC = ("DISCORD_GUILD_ID_LEGADO", "TEST_GUILD_ID",
-                  "id_servidor_tribunal")
+                  "id_servidor_tribunal", "GUILD_ID")
+
+
+def _env_deste_guild(guild_id: Any) -> bool:
+    """
+    Diz se as variáveis de ambiente do .env pertencem a este servidor.
+
+    Importante: CLAN_TAG, CANAL_REGISTRO_ID, id_canal_suporte e afins são do
+    servidor do Clash. Sem esta checagem, a pre-configuração colocaria no KOTH
+    o tag do clã e o ID de canal do outro servidor — o bot passaria a registrar
+    membro no canal errado e a nunca achar o canal.
+    """
+    alvo = str(guild_id).strip()
+    for nome in ENV_GUILDS_COC:
+        valor = os.getenv(nome)
+        if valor and str(valor).strip() == alvo:
+            return True
+    return False
 
 
 def perfil_padrao_para(guild_id: Any) -> str:
@@ -273,7 +290,9 @@ def montar(guild_id: str, guild_name: str = "", guild_icon: str = None,
 
     canais: Dict[str, Any] = {}
     cargos: Dict[str, Any] = {}
-    if usar_env:
+    # As variáveis do .env são do servidor do Clash. Só entram nele.
+    usar_env_aqui = usar_env and _env_deste_guild(guild_id)
+    if usar_env_aqui:
         canais.update(_env_canais())
         cargos.update(_env_cargos())
     if detectar and guild is not None:
@@ -355,7 +374,7 @@ def montar(guild_id: str, guild_name: str = "", guild_icon: str = None,
     if "games" in modulos:
         gm = cfg["games"]
         coc = gm.get("coc") or {}
-        tag = (_env_clan() if usar_env else {}).get("clan_tag")
+        tag = (_env_clan() if usar_env_aqui else {}).get("clan_tag")
         if tag:
             coc["clan_tag"] = tag
             coc["enabled"] = True
@@ -418,9 +437,11 @@ def pendencias(cfg: Dict[str, Any]) -> List[str]:
 
     if mods.get("games"):
         coc = (cfg.get("games") or {}).get("coc") or {}
-        if not coc.get("clan_tag"):
-            faltando.append("jogos: tag do clã (CLAN_TAG)")
-        if not coc.get("status_channel_ids"):
+        # Sem tag do clã, este servidor não é de Clash (KOTH, por exemplo). O
+        # módulo games fica ligado mas sem nada de Clash a fazer — isso é a
+        # configuração certa, não uma pendência. Só cobramos os canais de voz
+        # quando é mesmo um servidor de clã.
+        if coc.get("clan_tag") and not coc.get("status_channel_ids"):
             faltando.append("jogos: canais de voz do Status do Clã "
                             "(use /status-cla auto-detectar)")
     return faltando

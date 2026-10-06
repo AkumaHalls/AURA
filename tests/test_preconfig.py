@@ -77,7 +77,7 @@ def main() -> int:
 
     guild = GuildFalso()
 
-    with mk.patch.dict(os.environ, ENV, clear=False):
+    with mk.patch.dict(os.environ, {**ENV, "TEST_GUILD_ID": GID}, clear=False):
         cfg, falta = pc.montar(GID, guild.name, None, "coc", guild=guild)
 
     # ---- perfil e preset ----
@@ -148,8 +148,31 @@ def main() -> int:
         cfg3, _ = pc.montar("999", "X", None, "perfil_que_nao_existe", guild=guild)
     checa(cfg3["profile"] == "generico", "perfil desconhecido cai no generico")
 
+    # ---- .env é do servidor do Clash e não pode vazar para outro ----
+    KOTH = "810674050581659668"
+    with mk.patch.dict(os.environ, {**ENV, "TEST_GUILD_ID": GID}, clear=False):
+        cfg5, falta5 = pc.montar(KOTH, "KOTH", None, "generico", guild=guild)
+
+    checa((cfg5["games"].get("coc") or {}).get("clan_tag") is None,
+          "servidor que não é do Clash não recebe o CLAN_TAG")
+    checa((cfg5["games"].get("coc") or {}).get("enabled") is not True,
+          "módulo clash fica desligado no KOTH")
+    checa(cfg5["games"]["coc"].get("registration_channel_id") is None,
+          "canal de registro do Clash não vaza para o KOTH")
+    checa(not any("Status do Clã" in f for f in falta5),
+          f"Status do Clã não vira pendência no KOTH ({falta5})")
+    # o ID de transcrição do .env (777) não pode aparecer em outro servidor
+    checa(cfg5["tickets"].get("transcript_channel_id") != 777,
+          "canal de transcrições do .env não vaza para o KOTH")
+    checa(cfg5["tickets"].get("transcript_channel_id") is None,
+          "KOTH fica sem transcrição (ninguém achou pelo nome)")
+
+    # e o dono do .env pode ser global, isso é intencional
+    checa(cfg5["owner_ids"] == ["260912891782365196"],
+          "dono do .env continua valendo em todos os servidores")
+
     # ---- só um módulo, se pedir ----
-    with mk.patch.dict(os.environ, ENV, clear=False):
+    with mk.patch.dict(os.environ, {**ENV, "TEST_GUILD_ID": GID}, clear=False):
         cfg4, _ = pc.montar(GID, guild.name, None, "coc", guild=guild,
                             modulos=("tickets", "logs"))
     l4 = [k for k, v in cfg4["modules"].items() if v]
