@@ -39,11 +39,22 @@ CATEGORIA_RE = re.compile(r"^ticket-\d{15,25}-\d+$")
 
 
 def _canal_do_ticket(thread: discord.Thread) -> Optional[str]:
-    """Extrai o ID do Mongo do topoico da thread."""
+    """
+    Acha o _id do Mongo deste ticket.
+
+    Primeiro tenta o tópico (tickets antigos). Threads não têm tópico gravável
+    pelo discord.py — `Thread.edit(topic=...)` estoura TypeError — então o
+    caminho real é procurar pela thread no banco. Sem esse fallback, todos os
+    botões do ticket (atender, transcrição, fechar) ficavam sem _id e não
+    salvavam nada.
+    """
     topico = (thread.topic or "").strip()
     if topico.startswith("aura-ticket:"):
-        return topico.split(":", 1)[1].strip() or None
-    return None
+        achado = topico.split(":", 1)[1].strip()
+        if achado:
+            return achado
+    doc = mongo_db.ticket_por_thread(thread.id, getattr(thread.guild, "id", None))
+    return str(doc.get("_id")) if doc else None
 
 
 def _nome_da_thread(user: discord.Member, numero: int) -> str:
@@ -426,10 +437,16 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
     )
 
     if ticket_id:
+        # Grava o _id no tópico quando der. Thread não tem tópico no
+        # discord.py, e essa chamada já chegou a derrubar tudo que vinha
+        # depois (embed, botões e saudação). Agora qualquer falha aqui é
+        # registrada e o fluxo continua — a thread já está no banco.
         try:
             await thread.edit(topic=f"aura-ticket:{ticket_id}")
-        except discord.Forbidden:
-            pass
+        except (TypeError, discord.Forbidden, discord.HTTPException, AttributeError) as exc:
+            runtime.log("ERRO",
+                        f"Não consegui gravar o tópico do ticket {thread.name}: {exc}",
+                        "tickets")
 
     mencao_staff = ""
     if tk.get("staff_role_id"):

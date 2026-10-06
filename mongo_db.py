@@ -333,6 +333,28 @@ def get_ticket(ticket_id) -> Optional[Dict[str, Any]]:
         return None
 
 
+def ticket_por_thread(thread_id, guild_id=None) -> Optional[Dict[str, Any]]:
+    """
+    Acha o ticket pela thread, devolvendo o _id do Mongo.
+
+    Threads não têm tópico gravável pelo discord.py, então o _id interno não
+    consegue ser escondido no canal como era antes. A thread é o único id
+    confiável, e `ticket_id` guarda exatamente isso.
+    """
+    if not _garantir_conexao() or db is None or not thread_id:
+        return None
+    q: Dict[str, Any] = {"ticket_id": str(thread_id)}
+    if guild_id:
+        q["guild_id"] = str(guild_id)
+    try:
+        doc = db.tickets.find_one(q, sort=[("ts", DESCENDING)])
+        if doc:
+            doc["_id"] = str(doc["_id"])
+        return doc
+    except Exception:
+        return None
+
+
 def salvar_transcricao(ticket_id, transcript: str, atendente: str = None,
                        mensagem_count: int = 0) -> bool:
     if not _garantir_conexao() or db is None:

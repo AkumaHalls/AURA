@@ -91,6 +91,37 @@ def main() -> int:
     checa("RatingView" in check, "a avaliacao e enviada ao fechar")
     checa("rating_enabled" in check, "a avaliacao respeita a config do painel")
 
+    # ---- o bug que matava todas as mensagens do ticket ----
+    # `Thread.edit()` nao aceita topic e estourava TypeError DEPOIS de criar a
+    # thread: embed, botao de atender e saudacao nunca eram enviados.
+    src_tid = inspect.getsource(at._canal_do_ticket)
+    checa("ticket_por_thread" in src_tid,
+          "o _id do ticket e buscado pela thread (topico nao funciona)")
+    checa("aura-ticket:" in src_tid, "ainda da para ler o topico dos tickets antigos")
+
+    # a chamada do topico tem que estar dentro de um try que nao engula o resto
+    linha_topic = [l for l in src_abrir.split("\n") if "thread.edit(" in l]
+    checa(bool(linha_topic), "a chamada de topico existe")
+    bloco = src_abrir[src_abrir.find("thread.edit(") - 400:src_abrir.find("thread.edit(")]
+    checa("try:" in bloco, "gravar o topico esta protegido por try")
+    checa("TypeError" in src_abrir,
+          "TypeError do discord.py e tratado explicitamente")
+
+    # e o _id precisa chegar a ser resolvido por banco
+    checa(hasattr(at.mongo_db, "ticket_por_thread"),
+          "existe a busca de ticket por thread no mongo")
+
+    # ---- painel do web: mesmo embed limpo ----
+    from core import runtime as rt
+    src_rt = inspect.getsource(rt._deploy_ticket_panel)
+    checa('add_field(name="Categorias"' not in src_rt
+          and "cobj.add_field" not in src_rt,
+          "o painel publicado pelo painel web nao lista as categorias")
+    checa("Central de Atendimento" in src_rt, "usa o titulo do modelo antigo")
+    checa("set_image" in src_rt, "usa o icone do servidor como imagem")
+    checa("_remover_paineis_antigos" in src_rt,
+          "apaga o painel antigo antes de publicar o novo")
+
     print()
     print("tickets: tudo certo" if FALHAS == 0 else f"tickets: {FALHAS} falha(s)")
     return 1 if FALHAS else 0

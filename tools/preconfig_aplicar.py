@@ -64,7 +64,8 @@ class GuildLeve:
 
 async def salvar_backup():
     import mongo_db
-    docs = await mongo_db.list_configs()
+    mongo_db.conectar()
+    docs = mongo_db.list_all_guild_configs()
     os.makedirs(BACKUP, exist_ok=True)
     destino = os.path.join(
         BACKUP, f"guild_configs_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.json")
@@ -121,8 +122,8 @@ async def main() -> int:
         if DRY:
             continue
 
-        ok = await mongo_db.upsert_guild_config(guild_id, cfg,
-                                                updated_by="preconfig_aplicar")
+        ok = mongo_db.upsert_guild_config(guild_id, cfg,
+                                          updated_by="preconfig_aplicar")
         st.invalidate(str(guild_id))
         print(f"  gravado: {ok}")
 

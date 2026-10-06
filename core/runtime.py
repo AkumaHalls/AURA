@@ -339,31 +339,25 @@ async def _deploy_ticket_panel(guild_id: Any, channel_id: Any) -> Dict[str, Any]
     if not categorias:
         return {"ok": False, "erro": "nenhuma categoria configurada"}
 
-    cor = str(tk.get("panel_color") or "#5865F2").lstrip("#")
+    cor = str(tk.get("panel_color") or "#f1c40f").lstrip("#")
+    titulo = tk.get("panel_title") or f"🛡️ Central de Atendimento - {guild.name} 🛡️"
+    descricao = tk.get("panel_description") or (
+        "Bem-vindo à central de ajuda! Use o menu abaixo para selecionar o "
+        "motivo do seu contato e abrir um ticket. Um líder ou co-líder irá te ajudar."
+    )
     try:
-        cobj = Embed(
-            title=tk.get("panel_title") or "Central de Atendimento",
-            description=tk.get("panel_description") or "Selecione um motivo abaixo.",
-            color=int(cor, 16),
-        )
+        cobj = Embed(title=titulo, description=descricao, color=int(cor, 16))
     except ValueError:
-        cobj = Embed(title=tk.get("panel_title") or "Central de Atendimento",
-                     description=tk.get("panel_description") or "Selecione um motivo abaixo.")
+        cobj = Embed(title=titulo, description=descricao)
 
-    if guild.icon:
-        cobj.set_thumbnail(url=guild.icon.url)
     if tk.get("panel_image_url"):
         cobj.set_image(url=tk["panel_image_url"])
+    elif guild.icon:
+        cobj.set_image(url=guild.icon.url)
+    cobj.set_footer(text=f"Atendimento do Clã {guild.name}")
 
-    linhas = []
-    for cat in categorias:
-        staff = f"\n➜ staff: <@&{cat['staff_role_id']}>" if cat.get("staff_role_id") else ""
-        desc = f" — {cat['description'][:120]}" if cat.get("description") else ""
-        linhas.append(f"{cat.get('emoji') or '📂'} **{cat.get('label')}**{desc}{staff}")
-    cobj.add_field(name="Categorias",
-                   value="\n".join(linhas)[:4000] or "—", inline=False)
-    cobj.set_footer(text=f"AURA · {len(categorias)} categoria(s) · {guild.name}")
-
+    # Sem campo "Categorias": o próprio DropDown já mostra os tópicos com emoji
+    # e descrição. Listar as duas vezes poluía o embed e ocupava a tela toda.
     cog = c.get_cog("Atendimento")
     if cog is None:
         return {"ok": False, "erro": "cog de tickets não carregado"}
@@ -375,13 +369,43 @@ async def _deploy_ticket_panel(guild_id: Any, channel_id: Any) -> Dict[str, Any]
     except Exception as exc:
         return {"ok": False, "erro": f"não consegui registrar a view: {exc}"}
 
+    apagados = await _remover_paineis_antigos(channel)
     try:
         msg = await channel.send(embed=cobj, view=TicketPanelView(guild.id, categorias))
     except Exception as exc:
         return {"ok": False, "erro": f"falha ao enviar: {exc}"}
 
     return {"ok": True, "channel_id": str(channel.id), "message_id": str(msg.id),
-            "categorias": len(categorias)}
+            "categorias": len(categorias), "removidos": apagados}
+
+
+async def _remover_paineis_antigos(channel, limite: int = 5) -> int:
+    """
+    Apaga painéis de tickets antigos do canal.
+
+    Sem isso o embed velho continua publicado junto com o novo, e a pessoa vê as
+    duas versões — foi o que aconteceu quando o painel antigo continuou no canal
+    depois da troca para DropDown.
+    """
+    import discord
+
+    apagados = 0
+    try:
+        async for msg in channel.history(limit=30):
+            if _client is None or msg.author.id != _client.user.id or not msg.embeds:
+                continue
+            titulo = msg.embeds[0].title or ""
+            if "Central de Atendimento" in titulo or "Atendimento" in titulo:
+                try:
+                    await msg.delete()
+                    apagados += 1
+                except discord.Forbidden:
+                    continue
+                if apagados >= limite:
+                    break
+    except (discord.Forbidden, discord.HTTPException, AttributeError):
+        pass
+    return apagados
 
 
 async def _send_preview(channel_id: Any, content: str) -> Dict[str, Any]:
