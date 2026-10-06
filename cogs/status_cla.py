@@ -268,14 +268,17 @@ class StatusCla(commands.Cog):
         e.set_footer(text="Ajuste o mapeamento no painel web → Jogos")
         await interaction.response.send_message(embed=e, ephemeral=True)
 
-    @grupo.command(name="auto-detectar", description="Detecta canais por emoji e sugere o mapeamento.")
+    @grupo.command(name="auto-detectar",
+                   description="Detecta canais por emoji e grava o mapeamento.")
+    @app_commands.describe(aplicar="Grava o mapeamento detectado (padrão: só mostra)")
     @commands.guild_only()
     @commands.has_permissions(manage_channels=True)
-    async def auto_detectar(self, interaction: discord.Interaction):
+    async def auto_detectar(self, interaction: discord.Interaction,
+                            aplicar: bool = False):
         guild = interaction.guild
         cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
-        coc = (cfg.get("games") or {}).get("coc") or {}
-        canais = coc.get("status_channel_ids") or {}
+        coc = dict(((cfg.get("games") or {}).get("coc") or {}))
+        canais = dict(coc.get("status_channel_ids") or {})
         achados = self._achar_canais(guild, canais.get("categoria_id"))
 
         if not achados:
@@ -283,10 +286,31 @@ class StatusCla(commands.Cog):
                 "Não encontrei canais de status por emoji. Configure manualmente no painel.",
                 ephemeral=True)
 
+        if aplicar:
+            for chave, ch in achados.items():
+                canais[chave] = ch.id
+            coc["status_channel_ids"] = canais
+            if "coc" not in cfg.get("games", {}):
+                cfg.setdefault("games", {})["coc"] = coc
+            else:
+                cfg["games"]["coc"] = coc
+            import mongo_db
+
+            mongo_db.upsert_guild_config(guild.id, cfg, updated_by="status-cla")
+            st.invalidate(str(guild.id))
+            resultado = await self._atualizar_um(guild, cfg)
+            linhas = "\n".join(f"`{k}` → {c.id} ({c.name})"
+                               for k, c in achados.items())
+            return await interaction.response.send_message(
+                f"✅ Mapeamento gravado ({len(achados)} canais).\n{linhas}\n\n"
+                f"Status do Clã: {resultado or 'atualizado'}",
+                ephemeral=True)
+
         linhas = [f"`{chave}` → {ch.id} ({ch.name})" for chave, ch in achados.items()]
         await interaction.response.send_message(
             "Encontrei estes canais. Copie o mapeamento para o painel "
-            "(Jogos → Canais de status):\n```\n" + "\n".join(linhas) + "\n```",
+            "(Jogos → Canais de status):\n```\n" + "\n".join(linhas) + "\n```\n"
+            "Ou rode de novo com `aplicar:sim` que eu gravo por você.",
             ephemeral=True)
 
 
