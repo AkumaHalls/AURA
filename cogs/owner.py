@@ -10,6 +10,7 @@ servidor pelo painel — assim dá para adicionar um dono sem reiniciar o bot.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import platform
 import time
@@ -141,6 +142,75 @@ class Owner(commands.Cog):
             pass
         await guild.leave()
         await interaction.response.send_message(f"Saiu de **{nome}**.", ephemeral=True)
+
+    @owner.command(name="preconfig", description="Pre-configura os módulos com o padrão do perfil.")
+    @app_commands.describe(
+        perfil="'auto' escolhe coc no servidor do Clash e generico nos outros",
+        modulos="Módulos separados por vírgula (vazio = todos)",
+        alcance="Servidor atual, ou 'todos' para configuring todos")
+    async def preconfig(self, interaction: discord.Interaction,
+                        perfil: str = "auto", modulos: str = "",
+                        alcance: str = "atual"):
+        if not await self._eh_dono(interaction):
+            return await self._recusar(interaction)
+
+        from core import preconfig as pc
+
+        if perfil not in st.PERFIS and perfil != "auto":
+            return await interaction.response.send_message(
+                f"Perfil '{perfil}' não existe. Use: {', '.join(st.PERFIS)} ou auto.",
+                ephemeral=True)
+
+        mods = tuple(m.strip() for m in modulos.split(",") if m.strip()) \
+            if modulos.strip() else pc.MODULOS_PADRAO
+        desconhecidos = [m for m in mods if m not in st.MODULOS]
+        if desconhecidos:
+            return await interaction.response.send_message(
+                f"Módulo desconhecido: {', '.join(desconhecidos)}.\n"
+                f" existent: {', '.join(st.MODULOS)}", ephemeral=True)
+
+        if alcance.strip().lower() in ("todos", "all", "*"):
+            alvos = list(self.client.guilds)
+        elif interaction.guild is not None:
+            alvos = [interaction.guild]
+        else:
+            return await interaction.response.send_message(
+                "Usa esse comando dentro de um servidor, ou passe alcance: todos.",
+                ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        linhas, total_falta = [], 0
+        for guild in alvos:
+            perfil_guild = pc.perfil_padrao_para(guild.id) if perfil == "auto" \
+                else perfil
+            try:
+                ok, cfg, falta = await asyncio.to_thread(
+                    pc.aplicar, guild.id, guild.name,
+                    str(guild.icon or "") or None, perfil_guild, guild=guild,
+                    modulos=mods)
+            except Exception as exc:
+                linhas.append(f"❌ **{guild.name}** — erro: {exc}")
+                continue
+            if not ok:
+                linhas.append(f"❌ **{guild.name}** — não consegui gravar no Mongo")
+                continue
+            ligados = [k for k, v in (cfg.get("modules") or {}).items() if v]
+            total_falta += len(falta)
+            resumo = f"✅ **{guild.name}** · perfil `{perfil_guild}` · " \
+                     f"{len(ligados)} módulos"
+            if falta:
+                resumo += "\n" + "\n".join(f"   • falta: {f}" for f in falta)
+            linhas.append(resumo)
+
+        e = discord.Embed(title="⚙️ Pre-configuração aplicada", color=discord.Color.green())
+        e.description = "\n".join(linhas) or "nenhum servidor encontrado"
+        e.add_field(name="Punição automática",
+                    value="desligada (só avisa e apaga)", inline=True)
+        e.add_field(name="Pendências no total",
+                    value=str(total_falta) or "0", inline=True)
+        e.set_footer(text="Ajuste o resto no painel web (Configurações gerais).")
+        await interaction.followup.send(embed=e, ephemeral=True)
 
     @owner.command(name="sync", description="Ressincroniza os comandos do AURA.")
     async def sync_cmd(self, interaction: discord.Interaction):
