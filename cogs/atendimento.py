@@ -1,18 +1,18 @@
-﻿"""
-AURA Â· Tickets
+"""
+AURA · Tickets
 --------------
-Atendimento configurÃ¡vel POR SERVIDOR. Nada aqui Ã© fixo em Clash of Clans:
-o painel define as categorias (nome, emoji, descriÃ§Ã£o, mensagem de abertura e
+Atendimento configurável POR SERVIDOR. Nada aqui é fixo em Clash of Clans:
+o painel define as categorias (nome, emoji, descrição, mensagem de abertura e
 cargo extra de staff), e o bot monta o painel e cria as threads a partir disso.
 
 Fluxo:
     /painel enviar        publica o painel de categorias no canal
-    botÃ£o/select          cria a thread privada, salva no Mongo
+    botão/select          cria a thread privada, salva no Mongo
     /atendimento atender  um staff assume o ticket
-    botÃ£o Fechar          gera a transcriÃ§Ã£o, salva e opcionalmente avalia
+    botão Fechar          gera a transcrição, salva e opcionalmente avalia
 
-Threads sÃ£o nomeadas `ticket-<user_id>-<n>`; o ID do Mongo fica guardado na
-thread em `topic` e no documento, entÃ£o nÃ£o dependemos de parsing de nome.
+Threads são nomeadas `ticket-<user_id>-<n>`; o ID do Mongo fica guardado na
+thread em `topic` e no documento, então não dependemos de parsing de nome.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from core import runtime
 from core import settings as st
 from core.placeholders import render
 
-#: PainÃ©is publicados, para o /painel remover o anterior sem duplicar.
+#: Painéis publicados, para o /painel remover o anterior sem duplicar.
 _painel_ids: Dict[str, int] = {}
 _views_registradas: Dict[str, "TicketPanelView"] = {}
 
@@ -63,11 +63,11 @@ def _nome_da_thread(user: discord.Member, numero: int) -> str:
 
 def _cor(valor, padrao: str = "#f1c40f") -> discord.Color:
     """
-    Cor do embed, tolerante a valor invÃ¡lido.
+    Cor do embed, tolerante a valor inválido.
 
-    A thread Ã© criada ANTES do embed. Se a cor vier errada da config, o
+    A thread é criada ANTES do embed. Se a cor vier errada da config, o
     `int(..., 16)` estourava ValueError e o ticket ficava criado sem nenhuma
-    mensagem â€” exatamente o sintoma de "abre o ticket e nÃ£o aparece nada".
+    mensagem — exatamente o sintoma de "abre o ticket e não aparece nada".
     """
     for tentativa in (valor, padrao):
         try:
@@ -83,11 +83,11 @@ def _cor(valor, padrao: str = "#f1c40f") -> discord.Color:
 
 class TicketPanelView(discord.ui.View):
     """
-    Painel de categorias: um Ãºnico DropDown, como era antes.
+    Painel de categorias: um único DropDown, como era antes.
 
-    Antes cada categoria virava um botÃ£o e o embed listava todas elas, o que
-    poluÃ­a a tela e passava de 5 por linha. O menu resolve os dois problemas:
-    a lista fica no prÃ³prio menu e o embed fica limpo.
+    Antes cada categoria virava um botão e o embed listava todas elas, o que
+    poluía a tela e passava de 5 por linha. O menu resolve os dois problemas:
+    a lista fica no próprio menu e o embed fica limpo.
     """
 
     def __init__(self, guild_id: int, categorias: List[Dict[str, Any]]):
@@ -96,7 +96,7 @@ class TicketPanelView(discord.ui.View):
         self.categorias = categorias or []
         self._montar()
 
-    # ---------- construÃ§Ã£o ----------
+    # ---------- construção ----------
 
     def _montar(self):
         self.clear_items()
@@ -110,7 +110,7 @@ class TicketPanelView(discord.ui.View):
 
 
 class TicketSelect(discord.ui.Select):
-    """Menu de assunto. Escolher o tÃ³pico NÃƒO abre o ticket ainda."""
+    """Menu de assunto. Escolher o tópico NÃO abre o ticket ainda."""
 
     def __init__(self, guild_id: int, categorias: List[Dict[str, Any]],
                  row: int = 0):
@@ -124,7 +124,7 @@ class TicketSelect(discord.ui.Select):
             for c in categorias[:25]
         ]
         super().__init__(
-            placeholder="Selecione um tÃ³pico para o suporte...",
+            placeholder="Selecione um tópico para o suporte...",
             custom_id=f"tk:{int(guild_id)}:select",
             options=opcoes,
             row=row,
@@ -140,10 +140,10 @@ class TicketSelect(discord.ui.Select):
 
 class CreateTicketView(discord.ui.View):
     """
-    BotÃ£o "Abrir Ticket" que aparece depois de escolher o tÃ³pico.
+    Botão "Abrir Ticket" que aparece depois de escolher o tópico.
 
-    Era assim antes: o menu explicava o assunto e sÃ³ criava o ticket quando a
-    pessoa confirmava. Sem essa etapa, um clique errado jÃ¡ deixava um ticket
+    Era assim antes: o menu explicava o assunto e só criava o ticket quando a
+    pessoa confirmava. Sem essa etapa, um clique errado já deixava um ticket
     solto no canal de suporte.
     """
 
@@ -156,7 +156,7 @@ class CreateTicketView(discord.ui.View):
         self.emoji = emoji
 
     @discord.ui.button(label="Abrir Ticket", style=discord.ButtonStyle.success,
-                       emoji="✅")
+                       emoji="🎫")
     async def abrir(self, interaction: discord.Interaction,
                     button: discord.ui.Button):
         await abrir_ticket(interaction, self.key, self.guild_id)
@@ -164,20 +164,20 @@ class CreateTicketView(discord.ui.View):
 
 async def mostrar_orientacao(interaction: discord.Interaction, key: str,
                             guild_id: int):
-    """Explica o tÃ³pico escolhido e oferece o botÃ£o de abrir o ticket."""
+    """Explica o tópico escolhido e oferece o botão de abrir o ticket."""
     guild = interaction.guild
     gid = int(guild_id or guild.id)
     cfg = await st.get_config_cached(gid, guild_name=guild.name)
 
     if not st.module_enabled(cfg, "tickets"):
-        return _erro(interaction, "O mÃ³dulo de tickets estÃ¡ **desligado** neste servidor.")
+        return _erro(interaction, "O módulo de tickets está **desligado** neste servidor.")
 
     cat = next((c for c in (cfg.get("tickets") or {}).get("categories") or []
                 if c.get("key") == key), None)
     if cat is None:
-        return _erro(interaction, "Essa categoria nÃ£o existe mais. Use o painel atualizado.")
+        return _erro(interaction, "Essa categoria não existe mais. Use o painel atualizado.")
 
-    emoji = cat.get("emoji") or "ðŸŽ«"
+    emoji = cat.get("emoji") or "🎫"
     titulo = f"{emoji} **{cat.get('label')}**"
     texto = cat.get("description") or ""
     orientacao = render(
@@ -197,58 +197,79 @@ async def mostrar_orientacao(interaction: discord.Interaction, key: str,
     )
 
 
+def _gid_do_interaction(interaction: Optional[discord.Interaction],
+                        padrao: Optional[int] = None) -> Optional[int]:
+    """Guild id vindo da interação, com fallback para o guardado na view.
+
+    Uma única view persistente compartilhada (registrada com `add_view`, sem
+    message_id) atende os tickets de TODOS os servidores — então o servidor
+    certo precisa vir da interação, nunca do estado interno do botão.
+    """
+    if interaction is not None and interaction.guild is not None:
+        return interaction.guild.id
+    return padrao
+
+
 # ==========================================================================
 # Views dentro do ticket
 # ==========================================================================
 
 class TicketAdminView(discord.ui.View):
     """
-    BotÃµes que ficam dentro do ticket: atender e fechar.
+    Botões que ficam dentro do ticket: atender, transcrição e fechar.
 
-    Esta view Ã© persistente (`timeout=None`) e Ã© enviada SEM `delete_after`.
-    Antes ela ia com `delete_after=15`, entÃ£o o botÃ£o de atender sumia em quinze
-    segundos e o admin nÃ£o conseguia assumir o ticket â€” era o botÃ£o que o staff
+    Esta view é persistente (`timeout=None`) e é enviada SEM `delete_after`.
+    Antes ela ia com `delete_after=15`, então o botão de atender sumia em quinze
+    segundos e o admin não conseguia assumir o ticket — era o botão que o staff
     mais precisa, sumindo primeiro.
+
+    Ela também é registrada de forma COMPARTILHADA com `add_view` no on_ready:
+    assim, depois de um restart os botões de tickets antigos continuam com
+    handler. Sem esse registro, o clique em "Atender" não tinha view nenhuma e
+    a Discord nunca recebia resposta — o "o bot não responde".
     """
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: Optional[int] = None):
         super().__init__(timeout=None)
-        self.guild_id = int(guild_id)
+        self.guild_id = None if guild_id is None else int(guild_id)
 
     @discord.ui.button(label="Atender", style=discord.ButtonStyle.success,
                        emoji="✅", custom_id="tk:assumir")
     async def assumir(self, interaction: discord.Interaction,
                       button: discord.ui.Button):
-        cfg = await st.get_config_cached(self.guild_id,
-                                         guild_name=interaction.guild.name)
+        gid = _gid_do_interaction(interaction, self.guild_id)
+
+        # Responde primeiro: config, histórico e Mongo demoram, e a janela de
+        # ack de uma interação é de 3 segundos. Se estourar, o Discord mostra
+        # "o bot não responde".
+        await interaction.response.defer()
+
+        cfg = await st.get_config_cached(gid, guild_name=interaction.guild.name)
         if not await _pode_atender(interaction.user, cfg):
-            return _erro(interaction, "VocÃª nÃ£o tem permissÃ£o para atender este ticket.")
+            return await _erro(interaction, "Você não tem permissão para atender este ticket.")
 
         if not isinstance(interaction.channel, discord.Thread):
-            return _erro(interaction, "Rode isso dentro do ticket.")
+            return await _erro(interaction, "Rode isso dentro do ticket.")
 
         dono_id = await _dono_do_ticket(interaction.channel)
         if dono_id == interaction.user.id:
-            return _msg(interaction, "VocÃª mesmo abriu este ticket.", ephemeral=True)
+            return await _msg(interaction, "Você mesmo abriu este ticket.", ephemeral=True)
 
         ticket_id = _canal_do_ticket(interaction.channel)
         mongo_db.atualizar_ticket_status(ticket_id, "atendendo", str(interaction.user))
         mongo_db.registrar_auditoria(
-            self.guild_id, interaction.guild.name, "ticket_atendido", "tickets",
+            gid, interaction.guild.name, "ticket_atendido", "tickets",
             str(interaction.user), f"assumiu o ticket {ticket_id}",
         )
 
-        await interaction.response.defer()
-
-        # O embed ganha "Atendido por", como era antes, e o botÃ£o fica travado
-        # para o staff nÃ£o clicar duas vezes.
+        # O embed ganha "Atendido por", como era antes, e o botão fica travado
+        # para o staff não clicar duas vezes. O discord.py percorre os children
+        # da view procurando o custom_id do item.
         view = self._view if getattr(self, "_view", None) else self
-        try:
-            if isinstance(view, TicketAdminView):
-                view.get_item("tk:assumir").disabled = True
-                view.get_item("tk:assumir").label = "Em Atendimento"
-        except Exception:
-            pass
+        for item in view.children:
+            if item.custom_id == "tk:assumir":
+                item.disabled = True
+                item.label = "Em Atendimento"
 
         msg = interaction.message
         if msg is not None and msg.embeds:
@@ -262,17 +283,18 @@ class TicketAdminView(discord.ui.View):
                 pass
 
         await interaction.channel.send(
-            f"âœ… O ticket estÃ¡ sendo atendido por {interaction.user.mention}.")
+            f"✅ O ticket está sendo atendido por {interaction.user.mention}.")
 
-    @discord.ui.button(label="Salvar transcriÃ§Ã£o", style=discord.ButtonStyle.primary,
+    @discord.ui.button(label="Salvar transcrição", style=discord.ButtonStyle.primary,
                        custom_id="tk:transcricao")
     async def transcricao(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cfg = await st.get_config_cached(self.guild_id,
-                                         guild_name=interaction.guild.name)
-        if not await _pode_atender(interaction.user, cfg):
-            return _erro(interaction, "SÃ³ a equipe de atendimento pode salvar a transcriÃ§Ã£o.")
-
+        gid = _gid_do_interaction(interaction, self.guild_id)
         await interaction.response.defer(ephemeral=True)
+
+        cfg = await st.get_config_cached(gid, guild_name=interaction.guild.name)
+        if not await _pode_atender(interaction.user, cfg):
+            return await _erro(interaction, "Só a equipe de atendimento pode salvar a transcrição.")
+
         texto = await _montar_transcricao(interaction.channel)
         ticket_id = _canal_do_ticket(interaction.channel)
         mensagens = texto.count("\n") if texto else 0
@@ -280,26 +302,32 @@ class TicketAdminView(discord.ui.View):
                                          atendente=str(interaction.user),
                                          mensagem_count=mensagens)
         mongo_db.registrar_auditoria(
-            self.guild_id, interaction.guild.name, "ticket_transcricao", "tickets",
+            gid, interaction.guild.name, "ticket_transcricao", "tickets",
             str(interaction.user), ticket_id,
         )
         await interaction.followup.send(
-            "ðŸ“„ TranscriÃ§Ã£o salva no painel." if ok else "âš ï¸ Falha ao salvar a transcriÃ§Ã£o.",
+            "📄 Transcrição salva no painel." if ok else "⚠️ Falha ao salvar a transcrição.",
             ephemeral=True,
         )
 
     @discord.ui.button(label="Fechar", style=discord.ButtonStyle.danger,
                        custom_id="tk:staff_fechar")
     async def fechar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _fechar_ticket(interaction, self.guild_id, interaction.user)
+        gid = _gid_do_interaction(interaction, self.guild_id)
+        await _fechar_ticket(interaction, gid, interaction.user)
 
 
 class RatingView(discord.ui.View):
-    """AvaliaÃ§Ã£o de 1 a 5, enviada quando o ticket Ã© fechado."""
+    """Avaliação de 1 a 5, enviada quando o ticket é fechado.
 
-    def __init__(self, guild_id: int, ticket_id: str):
+    Também registrada de forma compartilhada com `add_view` no on_ready. O
+    ticket e o servidor são derivados da própria interação no callback, então
+    os botões continuam respondendo depois de um restart.
+    """
+
+    def __init__(self, guild_id: Optional[int] = None, ticket_id: Optional[str] = None):
         super().__init__(timeout=None)
-        self.guild_id = int(guild_id)
+        self.guild_id = None if guild_id is None else int(guild_id)
         self.ticket_id = ticket_id
         for nota in range(1, 6):
             self.add_item(RatingButton(guild_id, ticket_id, nota))
@@ -310,27 +338,32 @@ class RatingView(discord.ui.View):
 
 
 class RatingButton(discord.ui.Button):
-    def __init__(self, guild_id: int, ticket_id: str, nota: int):
+    def __init__(self, guild_id: Optional[int] = None,
+                 ticket_id: Optional[str] = None, nota: int = 1):
         super().__init__(
             style=discord.ButtonStyle.success if nota >= 4 else discord.ButtonStyle.secondary,
-            label=f"{nota} â­",
-            custom_id=f"tk:{guild_id}:rate:{nota}",
+            label=f"{nota} ⭐",
+            custom_id=f"tk:rate:{nota}",
             row=0,
         )
-        self.guild_id = int(guild_id)
+        self.guild_id = None if guild_id is None else int(guild_id)
         self.ticket_id = ticket_id
         self.nota = nota
 
     async def callback(self, interaction: discord.Interaction):
-        mongo_db.salvar_feedback(self.ticket_id, str(interaction.user.id), self.nota)
+        gid = _gid_do_interaction(interaction, self.guild_id)
+        thread = (interaction.channel
+                  if isinstance(interaction.channel, discord.Thread) else None)
+        ticket_id = self.ticket_id or (_canal_do_ticket(thread) if thread else None)
+        mongo_db.salvar_feedback(ticket_id, str(interaction.user.id), self.nota)
         mongo_db.registrar_auditoria(
-            self.guild_id, interaction.guild.name, "ticket_avaliado", "tickets",
+            gid, interaction.guild.name, "ticket_avaliado", "tickets",
             str(interaction.user), f"{self.nota}/5",
         )
         for item in self._view.children:
             item.disabled = True
         await interaction.response.edit_message(
-            content=f"Obrigado pela avaliaÃ§Ã£o: **{self.nota}/5** â­", view=self._view)
+            content=f"Obrigado pela avaliação: **{self.nota}/5** ⭐", view=self._view)
 
 
 # ==========================================================================
@@ -357,7 +390,7 @@ def _eh_staff(member: discord.Member, guild: discord.Guild) -> bool:
 async def _dono_do_ticket(thread: discord.Thread) -> Optional[int]:
     """
     Descobre o ID de quem abriu o ticket olhando o embed inicial.
-    `Thread.history` Ã© um iterador assÃ­ncrono, entÃ£o sÃ³ dÃ¡ para percorrer
+    `Thread.history` é um iterador assíncrono, então só dá para percorrer
     com `async for`, e sem inverter a ordem.
     """
     try:
@@ -379,7 +412,7 @@ async def _dono_do_ticket(thread: discord.Thread) -> Optional[int]:
 
 
 # ==========================================================================
-# AÃ§Ãµes
+# Ações
 # ==========================================================================
 
 async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int = None):
@@ -388,40 +421,40 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
 
     cfg = await st.get_config_cached(gid, guild_name=guild.name)
     if not st.module_enabled(cfg, "tickets"):
-        return _erro(interaction, "O mÃ³dulo de tickets estÃ¡ **desligado** neste servidor. "
-                                  "Ligue em **{0} â†’ Tickets** no painel.".format(guild.name))
+        return _erro(interaction, "O módulo de tickets está **desligado** neste servidor. "
+                                  "Ligue em **{0} → Tickets** no painel.".format(guild.name))
 
     pronto, falta = st.tickets_ready(cfg)
     if not pronto:
-        return _erro(interaction, f"O mÃ³dulo de tickets nÃ£o estÃ¡ pronto: falta {falta}. "
-                                  "Configure em **{0} â†’ Tickets** no painel.".format(guild.name))
+        return _erro(interaction, f"O módulo de tickets não está pronto: falta {falta}. "
+                                  "Configure em **{0} → Tickets** no painel.".format(guild.name))
 
     tk = cfg["tickets"]
     cat = next((c for c in tk["categories"] if c.get("key") == key), None)
     if cat is None:
-        return _erro(interaction, "Essa categoria nÃ£o existe mais. "
+        return _erro(interaction, "Essa categoria não existe mais. "
                                   "Use o painel atualizado do servidor.")
 
     suporte = guild.get_channel(tk["support_channel_id"])
     if suporte is None or not isinstance(suporte, discord.TextChannel):
-        return _erro(interaction, "O canal de suporte configurado nÃ£o existe mais.")
+        return _erro(interaction, "O canal de suporte configurado não existe mais.")
 
     if interaction.user.bot:
-        return _erro(interaction, "Bots nÃ£o abrem tickets.")
+        return _erro(interaction, "Bots não abrem tickets.")
 
     max_abertos = int(tk.get("max_open_per_user") or 0)
     abertos = mongo_db.tickets_abertos_por_usuario(gid, interaction.user.id)
     if max_abertos and abertos >= max_abertos:
-        return _erro(interaction, f"VocÃª jÃ¡ tem **{abertos}** ticket(s) aberto(s). "
-                                  f"O limite deste servidor Ã© {max_abertos}.")
+        return _erro(interaction, f"Você já tem **{abertos}** ticket(s) aberto(s). "
+                                  f"O limite deste servidor é {max_abertos}.")
 
     numero = mongo_db.contar_tickets(gid).get("total", 0) + 1
     nome = _nome_da_thread(interaction.user, numero)
 
-    # Reaproveita uma thread do mesmo usuÃ¡rio que ainda esteja aberta.
+    # Reaproveita uma thread do mesmo usuário que ainda esteja aberta.
     for th in suporte.threads:
         if th.name == nome and not th.archived:
-            return _msg(interaction, f"VocÃª jÃ¡ tem um ticket aberto: {th.mention}",
+            return _msg(interaction, f"Você já tem um ticket aberto: {th.mention}",
                         ephemeral=True)
 
     try:
@@ -429,17 +462,17 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
             name=nome, type=discord.ChannelType.private_thread,
             reason=f"AURA ticket: {cat.get('label')}")
     except discord.Forbidden:
-        return _erro(interaction, "NÃ£o tenho permissÃ£o para criar threads aqui.")
+        return _erro(interaction, "Não tenho permissão para criar threads aqui.")
     except discord.HTTPException as exc:
         runtime.log("ERRO", f"Falha ao criar thread: {exc}", "tickets")
-        return _erro(interaction, "NÃ£o consegui criar o ticket agora. Tente de novo.")
+        return _erro(interaction, "Não consegui criar o ticket agora. Tente de novo.")
 
-    # Thread privada: sem isso o membro nÃ£o consegue nem ver o canal.
+    # Thread privada: sem isso o membro não consegue nem ver o canal.
     try:
         await thread.add_user(interaction.user)
     except (discord.Forbidden, discord.HTTPException) as exc:
         runtime.log("ERRO", f"Falha ao adicionar membro na thread: {exc}", "tickets")
-        await _erro(interaction, "Criei o ticket, mas nÃ£o consegui te adicionar nele. "
+        await _erro(interaction, "Criei o ticket, mas não consegui te adicionar nele. "
                                  "Abra o painel de novo em instantes.")
         return
 
@@ -459,7 +492,7 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
                 await thread.edit(topic=f"aura-ticket:{ticket_id}")
         except (TypeError, AttributeError, discord.Forbidden, discord.HTTPException) as exc:
             runtime.log("ERRO",
-                        f"NÃ£o consegui gravar info no ticket {thread.name}: {exc}",
+                        f"Não consegui gravar info no ticket {thread.name}: {exc}",
                         "tickets")
 
     mencao_staff = ""
@@ -472,7 +505,7 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
         title=f"Ticket de {cat.get('label')}",
         color=_cor(tk.get("panel_color")),
     )
-    # Autor e Ã­cone do servidor no cabeÃ§alho, como era antes.
+    # Autor e ícone do servidor no cabeçalho, como era antes.
     if guild.icon:
         embed.set_author(name=f"Atendimento - {guild.name}", icon_url=guild.icon.url)
     if guild.name:
@@ -481,12 +514,16 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
                     inline=True)
     embed.add_field(name="Aberto", value=f"<t:{int(interaction.created_at.timestamp())}:R>",
                     inline=True)
-    embed.set_footer(text=f"ID do UsuÃ¡rio: {interaction.user.id}")
+    embed.set_footer(
+        text=f"ID do Usuário: {interaction.user.id}",
+        icon_url=(interaction.client.user.display_avatar.url
+                  if interaction.client.user is not None else None),
+    )
     if interaction.user.display_avatar:
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-    # View persistente e SEM delete_after: o botÃ£o de atender precisa continuar
-    # lÃ¡ enquanto o ticket estiver aberto.
+    # View persistente e SEM delete_after: o botão de atender precisa continuar
+    # lá enquanto o ticket estiver aberto.
     view_ticket = TicketAdminView(gid)
 
     cabecalho = f"Novo ticket de {interaction.user.mention}."
@@ -494,9 +531,9 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
         cabecalho += f" {mencao_staff}"
     await thread.send(content=cabecalho, embed=embed, view=view_ticket)
 
-    # SequÃªncia de boas-vindas, como era antes: o membro vÃª o bot "digitando" e
-    # entende na hora que estÃ¡ na fila. Usa o texto configurado no painel quando
-    # existe; senÃ£o cai na saudaÃ§Ã£o padrÃ£o.
+    # Sequência de boas-vindas, como era antes: o membro vê o bot "digitando" e
+    # entende na hora que está na fila. Usa o texto configurado no painel quando
+    # existe; senão cai na saudação padrão.
     texto = tk.get("welcome_message") or ""
     if texto.strip():
         await thread.send(render(
@@ -513,17 +550,17 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
             await thread.trigger_typing()
             await asyncio.sleep(1.0)
             await thread.send(
-                f"Seja muito bem-vindo(a) ao atendimento do clÃ£ **{guild.name}**!")
+                f"Seja muito bem-vindo(a) ao atendimento do clã **{guild.name}**!")
 
             if mencao_staff:
                 await thread.trigger_typing()
                 await asyncio.sleep(1.1)
-                await thread.send(f"Daqui a pouco vocÃª serÃ¡ **atendido** por um {mencao_staff}.")
+                await thread.send(f"Daqui a pouco você será **atendido** por um {mencao_staff}.")
 
             await thread.trigger_typing()
             await asyncio.sleep(1.0)
             await thread.send(
-                "Enquanto isso, por favor, nos dÃª o mÃ¡ximo de detalhes sobre o seu caso.")
+                "Enquanto isso, por favor, nos dê o máximo de detalhes sobre o seu caso.")
         except (discord.Forbidden, discord.HTTPException) as exc:
             runtime.log("ERRO", f"Falha na saudade do ticket: {exc}", "tickets")
 
@@ -532,13 +569,13 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
 
     runtime.log(
         "INFO",
-        f"[{guild.name}] ticket de {interaction.user} Â· {cat.get('label')}",
+        f"[{guild.name}] ticket de {interaction.user} · {cat.get('label')}",
         "tickets",
     )
     mongo_db.registrar_auditoria(gid, guild.name, "ticket_aberto", "tickets",
                                  interaction.user, cat.get("label"))
 
-    await _msg(interaction, f"âœ… Ticket aberto: {thread.mention}", ephemeral=True)
+    await _msg(interaction, f"✅ Ticket aberto: {thread.mention}", ephemeral=True)
 
 
 def _erro(interaction: discord.Interaction, texto: str):
@@ -554,7 +591,7 @@ def _msg(interaction: discord.Interaction, texto: str, ephemeral: bool = True):
 
 
 async def _montar_transcricao(thread: discord.Thread, limite: int = 200) -> str:
-    linhas = [f"# TranscriÃ§Ã£o Â· {thread.name}", ""]
+    linhas = [f"# Transcrição · {thread.name}", ""]
     try:
         async for msg in thread.history(limit=limite, oldest_first=True):
             stamp = msg.created_at.strftime("%d/%m %H:%M")
@@ -566,10 +603,10 @@ async def _montar_transcricao(thread: discord.Thread, limite: int = 200) -> str:
             conteudo = msg.content or "(sem texto)"
             if msg.embeds:
                 conteudo += " " + " ".join(
-                    f"[embed: {e.title or 'sem tÃ­tulo'}]" for e in msg.embeds)
-            linhas.append(f"**{stamp} Â· {quem}**\n{conteudo}\n")
+                    f"[embed: {e.title or 'sem título'}]" for e in msg.embeds)
+            linhas.append(f"**{stamp} · {quem}**\n{conteudo}\n")
     except discord.Forbidden:
-        linhas.append("_nÃ£o consegui ler o histÃ³rico_")
+        linhas.append("_não consegui ler o histórico_")
     return "\n".join(linhas)[:180_000]
 
 
@@ -577,6 +614,11 @@ async def _fechar_ticket(interaction: discord.Interaction, guild_id: int,
                          quem: discord.Member):
     thread = interaction.channel
     guild = interaction.guild
+
+    # Responde antes de qualquer coisa lenta (config, histórico, Mongo): a
+    # janela de ack da interação é de 3 segundos.
+    await interaction.response.defer()
+
     cfg = await st.get_config_cached(guild_id, guild_name=guild.name)
     tk = cfg["tickets"]
 
@@ -584,21 +626,20 @@ async def _fechar_ticket(interaction: discord.Interaction, guild_id: int,
     eh_dono_do_ticket = dono_id is not None and dono_id == interaction.user.id
 
     if not (eh_dono_do_ticket or await _pode_atender(interaction.user, cfg)):
-        await _erro(interaction, "SÃ³ o dono do ticket ou um atendente pode fechar isso.")
+        await _erro(interaction, "Só o dono do ticket ou um atendente pode fechar isso.")
         return
 
-    await interaction.response.defer()
     ticket_id = _canal_do_ticket(thread)
 
     texto = await _montar_transcricao(thread)
     mongo_db.salvar_transcricao(ticket_id, texto, atendente=str(quem),
                                  mensagem_count=texto.count("\n"))
     mongo_db.atualizar_ticket_status(ticket_id, "fechado", atendente=str(quem),
-                                     motivo="fechado por botÃ£o")
+                                     motivo="fechado por botão")
 
-    cabecalho = ("ðŸ”’ Ticket fechado"
+    cabecalho = ("🔒 Ticket fechado"
                  + (f" por {quem.mention}" if quem else "")
-                 + f"\nTranscriÃ§Ã£o salva. Valorize o atendimento!")
+                 + f"\nTranscrição salva. Valorize o atendimento!")
     await thread.send(cabecalho)
 
     if tk.get("rating_enabled"):
@@ -622,7 +663,7 @@ async def _fechar_ticket(interaction: discord.Interaction, guild_id: int,
             try:
                 buf = BytesIO(texto.encode("utf-8", "ignore"))
                 await destino.send(
-                    content=f"ðŸ“„ TranscriÃ§Ã£o de {thread.mention}",
+                    content=f"📄 Transcrição de {thread.mention}",
                     file=discord.File(buf, filename=f"aura-{thread.name}.txt"),
                 )
             except discord.Forbidden:
@@ -652,7 +693,7 @@ class Atendimento(commands.Cog):
     # ---------- ciclo de vida ----------
 
     async def cog_load(self):
-        # No cog_load nÃ£o hÃ¡ servidor conectado ainda, entÃ£o sÃ³ o on_ready
+        # No cog_load não há servidor conectado ainda, então só o on_ready
         # registra as views. Chamar aqui deixaria uma corrotina sem espera.
         pass
 
@@ -672,6 +713,23 @@ class Atendimento(commands.Cog):
             except Exception:
                 continue
             self.registrar_view(guild.id, (cfg.get("tickets") or {}).get("categories") or [])
+        self.registrar_view_admin_persistente()
+
+    def registrar_view_admin_persistente(self):
+        """Registra as views de DENTRO do ticket de forma compartilhada.
+
+        Registradas uma única vez com message_id=None (valem para qualquer
+        mensagem que tenha os custom_ids). Quando o bot reinicia, o store de
+        views perde o vínculo com as mensagens individuais e só essas views
+        compartilhadas continuam responsivas — sem elas o clique em "Atender"
+        não tinha handler nenhum e a Discord nunca recebia resposta
+        ("o bot não responde").
+        """
+        if getattr(self, "_admin_views_registradas", False):
+            return
+        self._admin_views_registradas = True
+        self.client.add_view(TicketAdminView())
+        self.client.add_view(RatingView())
 
     def registrar_view(self, guild_id: int, categorias: List[Dict[str, Any]]):
         """(Re)cria a view persistente do painel de um servidor."""
@@ -699,7 +757,7 @@ class Atendimento(commands.Cog):
 
     # ---------- comandos ----------
 
-    painel = app_commands.Group(name="painel", description="PainÃ©is do AURA.")
+    painel = app_commands.Group(name="painel", description="Painéis do AURA.")
 
     @painel.command(name="enviar", description="Publica o painel de tickets neste canal.")
     @commands.guild_only()
@@ -709,7 +767,7 @@ class Atendimento(commands.Cog):
         cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
         pronto, falta = st.tickets_ready(cfg)
         if not st.module_enabled(cfg, "tickets"):
-            return await _erro(interaction, "MÃ³dulo de tickets desligado neste servidor.")
+            return await _erro(interaction, "Módulo de tickets desligado neste servidor.")
         if not pronto:
             return await _erro(interaction, f"Falta configurar: {falta}. Use o painel web.")
 
@@ -722,22 +780,28 @@ class Atendimento(commands.Cog):
         cor = _cor(tk.get("panel_color"))
         embed = discord.Embed(
             title=tk.get("panel_title")
-            or f"ðŸ›¡ï¸ Central de Atendimento - {guild.name} ðŸ›¡ï¸",
+            or f"🛡️ Central de Atendimento · {guild.name} 🛡️",
             description=(tk.get("panel_description")
-                         or "Bem-vindo Ã  central de ajuda! Use o menu abaixo para "
+                         or "Bem-vindo à central de ajuda! Use o menu abaixo para "
                             "selecionar o motivo do seu contato e abrir um ticket. "
-                            "Um lÃ­der ou co-lÃ­der irÃ¡ te ajudar."),
+                            "Um líder ou co-líder irá te ajudar."),
             color=cor,
         )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
         if tk.get("panel_image_url"):
             embed.set_image(url=tk["panel_image_url"])
         elif guild.icon:
-            # Antes o painel usava o Ã­cone do servidor como imagem.
+            # Antes o painel usava o ícone do servidor como imagem.
             embed.set_image(url=guild.icon.url)
-        embed.set_footer(text=f"Atendimento do ClÃ£ {guild.name}")
+        embed.set_footer(
+            text=f"Atendimento do Clã {guild.name}",
+            icon_url=(self.client.user.display_avatar.url
+                      if self.client.user is not None else None),
+        )
 
-        # Sem campo "Categorias": o prÃ³prio menu jÃ¡ mostra os tÃ³picos com emoji e
-        # descriÃ§Ã£o. Listar as duas vezes deixava o embed poluÃ­do e ocupava a
+        # Sem campo "Categorias": o próprio menu já mostra os tópicos com emoji e
+        # descrição. Listar as duas vezes deixava o embed poluído e ocupava a
         # tela inteira.
         await interaction.response.send_message(embed=embed, view=view)
         _painel_ids[guild.id] = interaction.channel.id
@@ -758,7 +822,7 @@ class Atendimento(commands.Cog):
                     break
         _painel_ids.pop(interaction.guild.id, None)
         await interaction.response.send_message(
-            f"ðŸ—‘ï¸ {apagados} painel(is) removido(s).", ephemeral=True)
+            f"🗑️ {apagados} painel(is) removido(s).", ephemeral=True)
 
     @painel.command(name="atualizar", description="Reposta o painel com a config atual.")
     @commands.guild_only()
@@ -768,11 +832,11 @@ class Atendimento(commands.Cog):
         cfg = await st.get_config_cached(interaction.guild.id,
                                          guild_name=interaction.guild.name)
         await interaction.response.send_message(
-            "ðŸ”„ Painel atualizado com as categorias atuais do painel web.\n"
+            "🔄 Painel atualizado com as categorias atuais do painel web.\n"
             f"Categorias: **{len(cfg['tickets']['categories'])}**.\n"
             "Use `/painel remover` e `/painel enviar` para republish.", ephemeral=True)
 
-    atendimento = app_commands.Group(name="atendimento", description="GestÃ£o de tickets.")
+    atendimento = app_commands.Group(name="atendimento", description="Gestão de tickets.")
 
     @atendimento.command(name="fechar", description="Fecha um ticket por ID de thread.")
     @commands.guild_only()
@@ -781,7 +845,7 @@ class Atendimento(commands.Cog):
                                   canal: discord.Thread):
         await _fechar_ticket(interaction, interaction.guild.id, interaction.user)
 
-    @atendimento.command(name="assumir", description="Marca o ticket como atendido por vocÃª.")
+    @atendimento.command(name="assumir", description="Marca o ticket como atendido por você.")
     @commands.guild_only()
     async def atendimento_assumir(self, interaction: discord.Interaction):
         if not isinstance(interaction.channel, discord.Thread):
@@ -789,10 +853,10 @@ class Atendimento(commands.Cog):
         ticket_id = _canal_do_ticket(interaction.channel)
         mongo_db.atualizar_ticket_status(ticket_id, "atendendo", str(interaction.user))
         await interaction.response.send_message(
-            f"âœ… Ticket marcado como seu.", ephemeral=True)
+            f"✅ Ticket marcado como seu.", ephemeral=True)
 
     @atendimento.command(name="adicionar",
-                         description="Adiciona alguÃ©m ao ticket atual.")
+                         description="Adiciona alguém ao ticket atual.")
     @commands.guild_only()
     @app_commands.describe(membro="Quem entra no ticket")
     async def atendimento_adicionar(self, interaction: discord.Interaction,
@@ -802,12 +866,12 @@ class Atendimento(commands.Cog):
         try:
             await interaction.channel.add_user(membro)
         except discord.Forbidden:
-            return await _erro(interaction, "NÃ£o consegui adicionar esse membro ao ticket.")
+            return await _erro(interaction, "Não consegui adicionar esse membro ao ticket.")
         await interaction.response.send_message(
-            f"âœ… {membro.mention} foi adicionado a este ticket.", ephemeral=True)
+            f"✅ {membro.mention} foi adicionado a este ticket.", ephemeral=True)
 
     @atendimento.command(name="remover",
-                         description="Tira alguÃ©m do ticket atual.")
+                         description="Tira alguém do ticket atual.")
     @commands.guild_only()
     @app_commands.describe(membro="Quem sai do ticket")
     async def atendimento_remover(self, interaction: discord.Interaction,
@@ -817,13 +881,13 @@ class Atendimento(commands.Cog):
         try:
             await interaction.channel.remove_user(membro)
         except discord.Forbidden:
-            return await _erro(interaction, "NÃ£o consegui remover esse membro do ticket.")
+            return await _erro(interaction, "Não consegui remover esse membro do ticket.")
         await interaction.response.send_message(
-            f"âŒ {membro.mention} foi removido deste ticket.", ephemeral=True)
+            f"❌ {membro.mention} foi removido deste ticket.", ephemeral=True)
 
     @atendimento.command(name="listar", description="Lista os tickets deste servidor.")
     @commands.guild_only()
-    @app_commands.describe(limite="Quantos listar (padrÃ£o 10)")
+    @app_commands.describe(limite="Quantos listar (padrão 10)")
     async def atendimento_listar(self, interaction: discord.Interaction, limite: int = 10):
         itens = mongo_db.listar_tickets(guild_id=interaction.guild.id,
                                          limite=max(1, min(50, limite)))
@@ -832,23 +896,23 @@ class Atendimento(commands.Cog):
         linhas = []
         for t in itens:
             status = t.get("status", "?")
-            marca = {"aberto": "ðŸŸ¢", "atendendo": "ðŸŸ¡", "fechado": "âšª"}.get(status, "âš«")
-            linhas.append(f"{marca} **{t.get('tipo')}** Â· {t.get('user_name')} "
-                          f"Â· {status} Â· <t:{int(t.get('ts', 0))}:R>")
+            marca = {"aberto": "🟢", "atendendo": "🟡", "fechado": "⚪"}.get(status, "⚫")
+            linhas.append(f"{marca} **{t.get('tipo')}** · {t.get('user_name')} "
+                          f"· {status} · <t:{int(t.get('ts', 0))}:R>")
         embed = discord.Embed(
-            title=f"ðŸŽ« Tickets Â· {interaction.guild.name}",
+            title=f"🎫 Tickets · {interaction.guild.name}",
             description="\n".join(linhas)[:3800],
             color=discord.Color.blurple(),
         )
         contagem = mongo_db.contar_tickets(interaction.guild.id)
-        embed.set_footer(text=f"abertos: {contagem.get('aberto', 0)} Â· "
-                              f"atendendo: {contagem.get('atendendo', 0)} Â· "
+        embed.set_footer(text=f"abertos: {contagem.get('aberto', 0)} · "
+                              f"atendendo: {contagem.get('atendendo', 0)} · "
                               f"fechados: {contagem.get('fechado', 0)}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @atendimento.command(name="abrir", description="Abre um ticket para um membro (staff).")
     @commands.guild_only()
-    @app_commands.describe(membro="Para quem Ã© o ticket", assunto="Palavra que identifica a categoria")
+    @app_commands.describe(membro="Para quem é o ticket", assunto="Palavra que identifica a categoria")
     @commands.has_permissions(manage_channels=True)
     async def atendimento_abrir(self, interaction: discord.Interaction,
                                 membro: discord.Member, assunto: str = None):
@@ -868,7 +932,7 @@ class Atendimento(commands.Cog):
         sup_id = cfg["tickets"].get("support_channel_id")
         suporte = interaction.guild.get_channel(sup_id) if sup_id else None
         if suporte is None or not isinstance(suporte, discord.TextChannel):
-            return await _erro(interaction, "Canal de suporte nÃ£o configurado.")
+            return await _erro(interaction, "Canal de suporte não configurado.")
 
         numero = mongo_db.contar_tickets(interaction.guild.id).get("total", 0) + 1
         nome = _nome_da_thread(membro, numero)
@@ -877,7 +941,7 @@ class Atendimento(commands.Cog):
                 name=nome, type=discord.ChannelType.private_thread,
                 reason=f"AURA ticket aberto por {interaction.user}")
         except discord.HTTPException as exc:
-            return await _erro(interaction, f"NÃ£o consegui criar a thread: {exc}")
+            return await _erro(interaction, f"Não consegui criar a thread: {exc}")
 
         ticket_id = mongo_db.salvar_ticket(
             membro.id, membro.name, next(c["label"] for c in cats if c["key"] == chave),
@@ -898,14 +962,14 @@ class Atendimento(commands.Cog):
             description=f"Ticket aberto por **{interaction.user.mention}** para {membro.mention}.",
             color=discord.Color.blurple(),
         )
-        # O campo "Membro" Ã© como o AURA descobre o dono do ticket depois.
-        embed.add_field(name="Membro", value=f"{membro.mention} Â· `{membro.id}`")
+        # O campo "Membro" é como o AURA descobre o dono do ticket depois.
+        embed.add_field(name="Membro", value=f"{membro.mention} · `{membro.id}`")
         try:
             await thread.add_user(membro)
         except discord.HTTPException:
             pass
         await thread.send(embed=embed, view=TicketAdminView(interaction.guild.id))
-        await interaction.response.send_message(f"âœ… Ticket criado: {thread.mention}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Ticket criado: {thread.mention}", ephemeral=True)
 
     @atendimento.command(name="importar", description="Importa threads antigas como tickets fechados.")
     @commands.guild_only()
@@ -916,7 +980,7 @@ class Atendimento(commands.Cog):
         sup_id = cfg["tickets"].get("support_channel_id")
         suporte = interaction.guild.get_channel(sup_id) if sup_id else None
         if suporte is None or not isinstance(suporte, discord.TextChannel):
-            return await _erro(interaction, "Canal de suporte nÃ£o configurado.")
+            return await _erro(interaction, "Canal de suporte não configurado.")
 
         await interaction.response.defer(ephemeral=True)
         importadas = 0
@@ -926,7 +990,7 @@ class Atendimento(commands.Cog):
             if mongo_db.ticket_aberto_do_usuario(interaction.guild.id, _user_do_ticket(th.name)):
                 continue
             mongo_db.salvar_ticket(
-                _user_do_ticket(th.name), f"usuÃ¡rio {_user_do_ticket(th.name)}",
+                _user_do_ticket(th.name), f"usuário {_user_do_ticket(th.name)}",
                 "Importado", "fechado", atendente="Importado automaticamente",
                 guild_id=interaction.guild.id, guild_name=interaction.guild.name,
                 channel_name=th.name,
@@ -934,23 +998,23 @@ class Atendimento(commands.Cog):
             importadas += 1
 
         await interaction.followup.send(
-            f"âœ… {importadas} thread(s) antiga(s) importada(s).", ephemeral=True)
+            f"✅ {importadas} thread(s) antiga(s) importada(s).", ephemeral=True)
 
-    @atendimento.command(name="stats", description="NÃºmeros de tickets deste servidor.")
+    @atendimento.command(name="stats", description="Números de tickets deste servidor.")
     @commands.guild_only()
     async def atendimento_stats(self, interaction: discord.Interaction):
         g = interaction.guild.id
         contagem = mongo_db.contar_tickets(g)
         feedback = mongo_db.media_feedback(g)
-        embed = discord.Embed(title=f"ðŸ“Š Tickets Â· {interaction.guild.name}",
+        embed = discord.Embed(title=f"📊 Tickets · {interaction.guild.name}",
                               color=discord.Color.green())
         embed.add_field(name="Total", value=str(contagem.get("total", 0)), inline=True)
         embed.add_field(name="Abertos", value=str(contagem.get("aberto", 0)), inline=True)
         embed.add_field(name="Atendendo", value=str(contagem.get("atendendo", 0)), inline=True)
         embed.add_field(name="Fechados", value=str(contagem.get("fechado", 0)), inline=True)
         nota = feedback.get("media") or 0
-        embed.add_field(name="AvaliaÃ§Ã£o",
-                        value=f"{nota:.1f}/5 â­\n{feedback.get('total', 0)} resposta(s)",
+        embed.add_field(name="Avaliação",
+                        value=f"{nota:.1f}/5 ⭐\n{feedback.get('total', 0)} resposta(s)",
                         inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -962,10 +1026,3 @@ def _user_do_ticket(nome: str) -> str:
 
 async def setup(client: commands.Bot) -> None:
     await client.add_cog(Atendimento(client))
-
-
-
-
-
-
-

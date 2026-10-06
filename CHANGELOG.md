@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 Todas as mudanças relevantes deste projeto.
 
@@ -6,6 +6,17 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), e o
 projeto usa [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
+
+### Corrigido
+
+- Tickets: restaurado registro de views persistentes no on_ready (TicketAdminView/RatingView) com dd_view, evitando "bot não responde" após reinício.
+- Tickets: defer() movido para o início de ssumir e _fechar_ticket, com respostas via ollowup (evita timeout de 3s).
+- Tickets: travamento do botão "Atender" por custom_id (removido uso de iew.get_item).
+- Tickets: callbacks derivam guild_id da interação (_gid_do_interaction) para suportar views compartilhadas multi-servidor.
+- Avaliação: RatingButton com custom_id global e resolução correta de ticket/servidor.
+- Correções menores de encoding e ajustes no embed do painel (thumbnail/footer).
+- Adicionado teste 	ests/test_ticket_persistencia.py cobrindo persistência e comportamento pós-restart.
+
 
 ## [1.0.0] — 2026-10-05
 

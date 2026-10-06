@@ -26,6 +26,7 @@ TESTES = [
     ("painel", "test_painel.py"),
     ("painel post", "test_painel_post.py"),
     ("chamadas mongo_db", "test_chamadas_db.py"),
+    ("persistencia do ticket", "test_ticket_persistencia.py"),
     ("migracao do .env", "test_migracao_env.py"),
 ]
 
