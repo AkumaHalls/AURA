@@ -111,6 +111,13 @@ def main() -> int:
     checa(hasattr(at.mongo_db, "ticket_por_thread"),
           "existe a busca de ticket por thread no mongo")
 
+    # a busca tem que respeitar o servidor, senao o botao de atender pode
+    # abrir o ticket do clã errado
+    src_busca = inspect.getsource(at.mongo_db.ticket_por_thread)
+    checa("guild_id" in src_busca, "a busca por thread filtra por servidor")
+    checa("ts" in src_busca, "a busca devolve o ticket mais recente")
+    checa("_id" in src_busca, "a busca devolve o _id do mongo")
+
     # ---- painel do web: mesmo embed limpo ----
     from core import runtime as rt
     src_rt = inspect.getsource(rt._deploy_ticket_panel)
