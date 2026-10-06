@@ -506,22 +506,22 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
         )[:2000])
     else:
         try:
-            async with thread.typing():
-                await asyncio.sleep(1.2)
+            await thread.trigger_typing()
+            await asyncio.sleep(1.1)
             await thread.send(f"Oiiie {interaction.user.mention}, **tudo bem?**")
 
-            async with thread.typing():
-                await asyncio.sleep(1.0)
+            await thread.trigger_typing()
+            await asyncio.sleep(1.0)
             await thread.send(
                 f"Seja muito bem-vindo(a) ao atendimento do clã **{guild.name}**!")
 
             if mencao_staff:
-                async with thread.typing():
-                    await asyncio.sleep(1.2)
+                await thread.trigger_typing()
+                await asyncio.sleep(1.1)
                 await thread.send(f"Daqui a pouco você será **atendido** por um {mencao_staff}.")
 
-            async with thread.typing():
-                await asyncio.sleep(1.2)
+            await thread.trigger_typing()
+            await asyncio.sleep(1.0)
             await thread.send(
                 "Enquanto isso, por favor, nos dê o máximo de detalhes sobre o seu caso.")
         except (discord.Forbidden, discord.HTTPException) as exc:
