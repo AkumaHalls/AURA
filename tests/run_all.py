@@ -20,6 +20,7 @@ TESTES = [
     ("gravacao de config", "test_db_write.py"),
     ("painel nao perde config", "test_painel_config.py"),
     ("filtro por servidor", "test_filtro_guild.py"),
+    ("fluxo de tickets", "test_ticket_fluxo.py"),
     ("pre-configuracao", "test_preconfig.py"),
     ("moderacao", "test_moderacao.py"),
     ("painel", "test_painel.py"),
