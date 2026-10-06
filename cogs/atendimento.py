@@ -42,17 +42,16 @@ def _canal_do_ticket(thread: discord.Thread) -> Optional[str]:
     """
     Acha o _id do Mongo deste ticket.
 
-    Primeiro tenta o tópico (tickets antigos). Threads não têm tópico gravável
-    pelo discord.py — `Thread.edit(topic=...)` estoura TypeError — então o
-    caminho real é procurar pela thread no banco. Sem esse fallback, todos os
-    botões do ticket (atender, transcrição, fechar) ficavam sem _id e não
-    salvavam nada.
+    Threads privadas de ticket nao tem 'topic' editavel/nem atributo em algumas
+    versoes. O caminho confiavel e buscar pela thread no banco. Mantemos o
+    fallback para tickets antigos que tenham topic gravado.
     """
-    topico = (thread.topic or "").strip()
-    if topico.startswith("aura-ticket:"):
-        achado = topico.split(":", 1)[1].strip()
-        if achado:
-            return achado
+    if getattr(thread, "topic", None):
+        topico = str(thread.topic).strip()
+        if topico.startswith("aura-ticket:"):
+            achado = topico.split(":", 1)[1].strip()
+            if achado:
+                return achado
     doc = mongo_db.ticket_por_thread(thread.id, getattr(thread.guild, "id", None))
     return str(doc.get("_id")) if doc else None
 
@@ -453,15 +452,14 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
     )
 
     if ticket_id:
-        # Grava o _id no tópico quando der. Thread não tem tópico no
-        # discord.py, e essa chamada já chegou a derrubar tudo que vinha
-        # depois (embed, botões e saudação). Agora qualquer falha aqui é
-        # registrada e o fluxo continua — a thread já está no banco.
+        # Grava o _id na thread quando possivel. Em algumas versoes do
+        # discord.py privado/thread nao tem 'topic' acessivel; em outras tem.
         try:
-            await thread.edit(topic=f"aura-ticket:{ticket_id}")
-        except (TypeError, discord.Forbidden, discord.HTTPException, AttributeError) as exc:
+            if hasattr(thread, "topic"):
+                await thread.edit(topic=f"aura-ticket:{ticket_id}")
+        except (TypeError, AttributeError, discord.Forbidden, discord.HTTPException) as exc:
             runtime.log("ERRO",
-                        f"Não consegui gravar o tópico do ticket {thread.name}: {exc}",
+                        f"Não consegui gravar info no ticket {thread.name}: {exc}",
                         "tickets")
 
     mencao_staff = ""
@@ -888,7 +886,11 @@ class Atendimento(commands.Cog):
             avatar=str(membro.display_avatar.url),
         )
         if ticket_id:
-            await thread.edit(topic=f"aura-ticket:{ticket_id}")
+            if hasattr(thread, "topic"):
+                try:
+                    await thread.edit(topic=f"aura-ticket:{ticket_id}")
+                except (TypeError, AttributeError, discord.Forbidden, discord.HTTPException) as exc:
+                    runtime.log("ERRO", f"Falha ao gravar info do ticket: {exc}", "tickets")
 
         embed = discord.Embed(
             title=f"{next(c['emoji'] for c in cats if c['key'] == chave)} "
