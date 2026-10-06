@@ -62,6 +62,22 @@ def _nome_da_thread(user: discord.Member, numero: int) -> str:
     return f"ticket-{user.id}-{numero}"
 
 
+def _cor(valor, padrao: str = "#f1c40f") -> discord.Color:
+    """
+    Cor do embed, tolerante a valor inválido.
+
+    A thread é criada ANTES do embed. Se a cor vier errada da config, o
+    `int(..., 16)` estourava ValueError e o ticket ficava criado sem nenhuma
+    mensagem — exatamente o sintoma de "abre o ticket e não aparece nada".
+    """
+    for tentativa in (valor, padrao):
+        try:
+            return discord.Color(int(str(tentativa or "").lstrip("#"), 16))
+        except (TypeError, ValueError):
+            continue
+    return discord.Color.gold()
+
+
 # ==========================================================================
 # Painel de categorias
 # ==========================================================================
@@ -456,7 +472,7 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
 
     embed = discord.Embed(
         title=f"Ticket de {cat.get('label')}",
-        color=discord.Color(int(str(tk.get("panel_color") or "#f1c40f").lstrip("#"), 16)),
+        color=_cor(tk.get("panel_color")),
     )
     # Autor e ícone do servidor no cabeçalho, como era antes.
     if guild.icon:
@@ -705,7 +721,7 @@ class Atendimento(commands.Cog):
         view = TicketPanelView(guild.id, cats)
         self.registrar_view(guild.id, cats)
 
-        cor = discord.Color(int(str(tk.get("panel_color") or "#f1c40f").lstrip("#"), 16))
+        cor = _cor(tk.get("panel_color"))
         embed = discord.Embed(
             title=tk.get("panel_title")
             or f"🛡️ Central de Atendimento - {guild.name} 🛡️",

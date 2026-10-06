@@ -118,6 +118,14 @@ def main() -> int:
     checa("ts" in src_busca, "a busca devolve o ticket mais recente")
     checa("_id" in src_busca, "a busca devolve o _id do mongo")
 
+    # cor invalida nao pode derrubar o ticket depois da thread criada
+    checa("def _cor(" in inspect.getsource(at), "existe o parser de cor tolerante")
+    src_cor = inspect.getsource(at._cor)
+    checa("ValueError" in src_cor, "cor invalida cai no padrao em vez de estourar")
+    checa("discord.Color.gold()" in src_cor, "cor sempre retorna algo utilizavel")
+    checa(src_abrir.count("int(str(tk.get(\"panel_color\")") == 0,
+          "nenhuma leitura direta de panel_color no caminho do ticket")
+
     # ---- painel do web: mesmo embed limpo ----
     from core import runtime as rt
     src_rt = inspect.getsource(rt._deploy_ticket_panel)
