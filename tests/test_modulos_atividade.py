@@ -177,6 +177,13 @@ def main():
     falhas += verdade("status_cla lê member_count/level/points (API correta)",
                       all(k in fontes["status_cla.py"]
                           for k in ("member_count", "level", "points", "war_win_streak")))
+    # coc.py 4.x: login no método, não no construtor.
+    for arquivo in ("status_cla.py", "clashlog_manager.py"):
+        src = fontes[arquivo]
+        falhas += verdade(f"{arquivo}: login da API usa coc.py 4.x",
+                          "await _client.login(COC_EMAIL, COC_PASSWORD)" in src
+                          and "CocClient(email=" not in src
+                          and "await _client.login()" not in src)
     falhas += verdade("grupos de comando marcados guild_only=True",
                       all("guild_only=True" in t for t in (
                           fontes["admin.py"], fontes["atendimento.py"],

@@ -54,9 +54,10 @@ async def _coc():
         from coc import Client as CocClient
     except ImportError:
         return None
-    _client = CocClient(email=COC_EMAIL, password=COC_PASSWORD)
+    # coc.py 4.x: login no método, não no construtor (na 1.x eram kwargs).
+    _client = CocClient()
     try:
-        await _client.login()
+        await _client.login(COC_EMAIL, COC_PASSWORD)
     except Exception as exc:
         runtime.log("ERRO", f"Clash: login falhou: {exc}", "clash")
         _client = None

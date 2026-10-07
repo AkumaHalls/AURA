@@ -96,23 +96,34 @@ _FUSO = _fuso_brasilia()
 
 _client = None
 
+#: Último erro de login/credencial, para dar mensagem útil no /status-cla.
+_login_erro: Optional[str] = None
+
 
 async def _coc():
-    global _client
+    global _client, _login_erro
     if _client is not None:
         return _client
     if not (COC_EMAIL and COC_PASSWORD):
+        _login_erro = "sem COC_EMAIL/COC_PASSWORD"
         return None
     try:
         from coc import Client as CocClient
     except ImportError:
+        _login_erro = "coc.py não instalado"
         return None
-    _client = CocClient(email=COC_EMAIL, password=COC_PASSWORD)
+    # coc.py 4.x: o login é feito no método, não no construtor (na 1.x eram
+    # kwargs do Client). Chamar do jeito antigo dava TypeError e as salas
+    # ficavam em 0/— com "sem credenciais".
+    _client = CocClient()
     try:
-        await _client.login()
+        await _client.login(COC_EMAIL, COC_PASSWORD)
     except Exception as exc:
         runtime.log("ERRO", f"StatusCla: login falhou: {exc}", "clash")
+        _login_erro = str(exc)
         _client = None
+    else:
+        _login_erro = None
     return _client
 
 
@@ -254,7 +265,9 @@ class StatusCla(commands.Cog):
 
         api = await _coc()
         if api is None:
-            return "sem credenciais da API do .env"
+            if not (COC_EMAIL and COC_PASSWORD):
+                return "sem credenciais da API no .env"
+            return f"login na API do Clash falhou: {_login_erro or 'ver logs'}"
 
         try:
             clan = await api.get_clan(tag)
