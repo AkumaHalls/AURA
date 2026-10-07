@@ -270,10 +270,10 @@ class ClashLogManager(commands.Cog):
     # Comandos
     # ------------------------------------------------------------------
 
-    clash = app_commands.Group(name="clash", description="Integração com Clash of Clans.")
+    clash = app_commands.Group(name="clash", description="Integração com Clash of Clans.", guild_only=True)
 
     @clash.command(name="status", description="Mostra a configuração do Clash neste servidor.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def clash_status(self, interaction: discord.Interaction):
         guild = interaction.guild
         cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
@@ -303,8 +303,8 @@ class ClashLogManager(commands.Cog):
         await interaction.response.send_message(embed=e, ephemeral=True)
 
     @clash.command(name="verificar", description="Confere os membros do clã agora.")
-    @commands.guild_only()
-    @commands.has_permissions(manage_roles=True)
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_roles=True)
     async def clash_verificar(self, interaction: discord.Interaction):
         guild = interaction.guild
         cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
@@ -332,7 +332,7 @@ class ClashLogManager(commands.Cog):
             f"Problemas: **{stats['erros']}**", ephemeral=True)
 
     @clash.command(name="membros", description="Lista os membros do clã e o cargo de cada um.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def clash_membros(self, interaction: discord.Interaction):
         cfg = await st.get_config_cached(interaction.guild.id,
                                          guild_name=interaction.guild.name)

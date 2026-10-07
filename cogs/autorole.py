@@ -27,6 +27,22 @@ def _config_pronta(ar: Dict[str, Any]) -> bool:
     return bool(ar.get("channel_id") and ar.get("give_role_id"))
 
 
+async def _reagir(message: discord.Message, emoji: str) -> None:
+    """Reação de feedback que nunca derruba o fluxo (falta de permissão etc)."""
+    try:
+        await message.add_reaction(emoji)
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+
+
+async def _responder(message: discord.Message, texto: str, delete_after: int) -> None:
+    """Resposta curta efêmera que nunca derruba o fluxo."""
+    try:
+        await message.reply(texto, delete_after=delete_after)
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+
+
 class Autorole(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
@@ -65,61 +81,75 @@ class Autorole(commands.Cog):
         cargo_bloqueio = ar.get("deny_role_id")
         cargo_entrada = ar.get("give_role_id")
 
+        if cargo_bloqueio and discord.utils.get(membro.roles, id=cargo_bloqueio):
+            await _reagir(message, "❌")
+            await _responder(message, "Você está bloqueado e não pode ser liberado. "
+                                       "Fale com a administração.", 30)
+            return
+
+        if cargo_entrada and discord.utils.get(membro.roles, id=cargo_entrada):
+            await _reagir(message, "👍")
+            await _responder(message, "Você já está liberado.", 15)
+            return
+
+        cargo = guild.get_role(cargo_entrada) if cargo_entrada else None
+        if cargo is None:
+            await _reagir(message, "⚠️")
+            runtime.log("ERRO", f"cargo de entrada {cargo_entrada} não existe em "
+                                 f"{guild.name}", "autorole")
+            return
+
+        # 1) O cargo é a parte crítica: sem ele não há liberação. Só aqui a
+        #    falha interrompe o fluxo (antes, uma reação sem permissão derrubava
+        #    também o envio da boas-vindas — a reação agora é separada).
         try:
-            if cargo_bloqueio and discord.utils.get(membro.roles, id=cargo_bloqueio):
-                await message.add_reaction("❌")
-                await message.reply(
-                    "Você está bloqueado e não pode ser liberado. Fale com a administração.",
-                    delete_after=30)
-                return
-
-            if cargo_entrada and discord.utils.get(membro.roles, id=cargo_entrada):
-                await message.add_reaction("👍")
-                await message.reply("Você já está liberado.", delete_after=15)
-                return
-
-            cargo = guild.get_role(cargo_entrada) if cargo_entrada else None
-            if cargo is None:
-                await message.add_reaction("⚠️")
-                runtime.log("ERRO", f"cargo de entrada {cargo_entrada} não existe em "
-                                     f"{guild.name}", "autorole")
-                return
-
             await membro.add_roles(cargo, reason=f"AURA autorole: {palavra}")
-            await message.add_reaction("✅")
+        except discord.Forbidden:
+            await _reagir(message, "⚠️")
+            runtime.log("ERRO", f"sem permissão para dar cargo em {guild.name}", "autorole")
+            return
+        except discord.HTTPException as exc:
+            await _reagir(message, "⚠️")
+            runtime.log("ERRO", f"autorole falhou em {guild.name}: {exc}", "autorole")
+            return
 
-            texto = render(
-                ar.get("welcome_message") or "Bem-vindo ao servidor!",
-                user=membro, member=membro, guild=guild, channel=message.channel,
-            )
-            if texto:
-                await message.channel.send(texto[:2000])
+        # 2) Reação de feedback, em separado — se falhar, o membro ainda é avisado.
+        await _reagir(message, "✅")
 
-            if ar.get("delete_message"):
-                atraso = min(120, int(ar.get("delete_delay_seconds") or 0))
-                await asyncio.sleep(atraso)
-                try:
-                    await message.delete()
-                except discord.NotFound:
-                    pass
-
+        # 3) Mensagem de boas-vindas, com o indicador de "digitando" (igual à B.A.D).
+        texto = render(
+            ar.get("welcome_message") or "Bem-vindo ao servidor!",
+            user=membro, member=membro, guild=guild, channel=message.channel,
+        )
+        if texto:
             try:
-                mongo_db.registrar_auditoria(
-                    guild.id, guild.name, "autorole_concedido", "autorole", membro,
-                    f"cargo {cargo.id}")
-            except Exception:
+                async with message.channel.typing():
+                    await asyncio.sleep(1.0)
+                await message.channel.send(texto[:2000])
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                runtime.log("AVISO", f"autorole: não consegui enviar a mensagem em "
+                                     f"{guild.name}: {exc}", "autorole")
+
+        # 4) Apagar a mensagem do membro, se configurado.
+        if ar.get("delete_message"):
+            atraso = min(120, int(ar.get("delete_delay_seconds") or 0))
+            await asyncio.sleep(atraso)
+            try:
+                await message.delete()
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
                 pass
 
-        except discord.Forbidden:
-            await message.add_reaction("⚠️")
-            runtime.log("ERRO", f"sem permissão para dar cargo em {guild.name}", "autorole")
-        except discord.HTTPException as exc:
-            runtime.log("ERRO", f"autorole falhou em {guild.name}: {exc}", "autorole")
+        try:
+            mongo_db.registrar_auditoria(
+                guild.id, guild.name, "autorole_concedido", "autorole", membro,
+                f"cargo {cargo.id}")
+        except Exception:
+            pass
 
-    ar = app_commands.Group(name="autorole", description="Liberação de acesso.")
+    ar = app_commands.Group(name="autorole", description="Liberação de acesso.", guild_only=True)
 
     @ar.command(name="status", description="Mostra a configuração de autorole aqui.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def ar_status(self, interaction: discord.Interaction):
         guild = interaction.guild
         cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
@@ -144,9 +174,9 @@ class Autorole(commands.Cog):
         await interaction.response.send_message(embed=e, ephemeral=True)
 
     @ar.command(name="liberar", description="Libera um membro manualmente.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     @app_commands.describe(membro="Quem liberar")
-    @commands.has_permissions(manage_roles=True)
+    @app_commands.checks.has_permissions(manage_roles=True)
     async def ar_liberar(self, interaction: discord.Interaction, membro: discord.Member):
         cfg = await st.get_config_cached(interaction.guild.id,
                                          guild_name=interaction.guild.name)
@@ -165,9 +195,9 @@ class Autorole(commands.Cog):
             f"✅ {membro.mention} recebeu {cargo.mention}.", ephemeral=True)
 
     @ar.command(name="revogar", description="Remove o cargo de um membro.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     @app_commands.describe(membro="Quem revogar")
-    @commands.has_permissions(manage_roles=True)
+    @app_commands.checks.has_permissions(manage_roles=True)
     async def ar_revogar(self, interaction: discord.Interaction, membro: discord.Member):
         cfg = await st.get_config_cached(interaction.guild.id,
                                          guild_name=interaction.guild.name)

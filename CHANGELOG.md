@@ -7,7 +7,37 @@ projeto usa [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Adicionado
+
+- Módulos de atividade reimplementados como cogs dedicados: `boas_vindas`
+  (entrada/saída, DM e log), `registros` (logs de entrada, saída, mensagem
+  apagada, boost e mudança de cargo) e `contador` (renomeia canal de contagem
+  de membros a cada 5 min).
+- Handler global de erros de slash command no `main.py` (`tree.on_error`):
+  permissões negadas e exceções agora respondem ao usuário em vez de falhar em
+  silêncio.
+
 ### Corrigido
+
+- Slash commands: `@app_commands.guild_only()` é no-op em subcomandos no
+  discord.py 2.x; o bloqueio de DM passou a ser aplicado nos **grupos pais**
+  (admin, chat, canal, cargo, painel, atendimento, autorole, clash, usuario,
+  servidor, mod, bot, status-cla).
+- Status do Clã (`status_cla`): reescrito no formato da B.A.D (Membros/Nível/
+  Troféus/Guerras/Streak/Atualizado), lendo os atributos corretos da API
+  (`member_count`, `level`, `points`, `war_wins`, `war_win_streak`), com
+  auto-detecção de categoria por nome, aliases de campo e horário de Brasília.
+- Autorole: cargo, reação e mensagem desacoplados; falha ao reagir/responder
+  não derruba mais a liberação de acesso; indicador de digitação antes do envio.
+- Atendimento: `trigger_typing()` substituído por `channel.typing()` (API
+  mudou no discord.py 2.x); botão "Abrir Ticket" passa a deferir antes de criar
+  a thread.
+- Boas-vindas/registros: bots são ignorados em entrada e saída; log de mensagem
+  apagada usa o evento `raw` (pega mensagens fora do cache).
+- Boas-vindas: mensagem de saída padrão corrigida (texto corrompido) e reparo
+  automático de configs salvas com o texto antigo.
+- Status do Clã: atualização e auto-detecção deferem antes do trabalho lento e
+  não varrem mais o servidor inteiro quando não há categoria configurada.
 
 - Tickets: restaurado registro de views persistentes no on_ready (TicketAdminView/RatingView) com dd_view, evitando "bot não responde" após reinício.
 - Tickets: defer() movido para o início de ssumir e _fechar_ticket, com respostas via ollowup (evita timeout de 3s).

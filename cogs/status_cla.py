@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import discord
@@ -28,15 +29,53 @@ from core import settings as st
 COC_EMAIL = os.getenv("COC_EMAIL")
 COC_PASSWORD = os.getenv("COC_PASSWORD")
 
-#: Emoji do canal -> chave do dado que ele mostra.
+#: Emoji do canal -> chave do dado que ele mostra. É o mesmo mapeamento da B.A.D,
+#: para os canais já existentes continuarem sendo reconhecidos sem reconfigurar.
 EMOJIS_PADRAO = {
     "👥": "membros",
-    "⭐": "estrelas",
+    "⭐": "nivel",
     "🏆": "trofeus",
-    "⚔️": "vitorias_guerra",
+    "⚔️": "guerras",
     "🔥": "streak",
-    "🕒": "tempo",
+    "🕒": "data",
 }
+
+#: Chaves antigas/alternativas do painel -> chave canônica da B.A.D.
+_ALIAS = {
+    "estrelas": "nivel",
+    "nivel": "nivel",
+    "vitorias_guerra": "guerras",
+    "guerras": "guerras",
+    "tempo": "data",
+    "data": "data",
+    "membros": "membros",
+    "trofeus": "trofeus",
+    "streak": "streak",
+}
+
+
+def _saudavel(resultado: Optional[str]) -> bool:
+    """
+    Diz se o resultado do update é "tudo certo" — inclusive quando nada mudou.
+
+    "nada mudou" é sucesso (os canais já estavam certos); só "sem tag",
+    "sem canais", "sem credenciais" e erro de API contam como problema.
+    """
+    if not resultado:
+        return False
+    return not resultado.startswith(("sem ", "API do Clash"))
+
+
+def _fuso_brasilia():
+    """America/Sao_Paulo quando houver tzdata; senão UTC-3 (o Brasil não tem mais horário de verão)."""
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo("America/Sao_Paulo")
+    except Exception:
+        return timezone(timedelta(hours=-3))
+
+
+_FUSO = _fuso_brasilia()
 
 _client = None
 
@@ -71,21 +110,29 @@ async def _fechar():
 
 
 def _numeros(clan: Any) -> Dict[str, str]:
-    """Extrai os números do clã, tolerando campos ausentes na API."""
-    def get(*nomes, padrao="?"):
+    """
+    Monta o nome final de cada canal de status, exatamente no formato da B.A.D.
+
+    A API do `coc` expõe `member_count`, `level`, `points` e `war_win_streak` —
+    antes o código lia `members`/`stars`/`trophies`/`war_streak`, que não existem
+    nesses objetos, e por isso os canais ficavam em "?".
+    """
+    def get(*nomes, padrao=None):
         for n in nomes:
             v = getattr(clan, n, None)
             if v is not None:
                 return v
         return padrao
 
+    horario = datetime.now(_FUSO).strftime("%d/%m %H:%M")
+    membros = get("member_count", "members", padrao="?")
     return {
-        "membros": str(get("members", "member_count", padrao=0)),
-        "estrelas": str(get("stars")),
-        "trofeus": str(get("trophies")),
-        "vitorias_guerra": str(get("war_wins")),
-        "streak": str(get("war_streak")),
-        "tempo": str(get("last_join_date", "last_seen", padrao="—")),
+        "membros": f"👥 Membros: {membros}/50",
+        "nivel": f"⭐ Nível: {get('level', 'nivel', padrao='?')}",
+        "trofeus": f"🏆 Troféus: {get('points', 'trophies', padrao='?')}",
+        "guerras": f"⚔️ Guerras Ganhas: {get('war_wins', padrao='?')}",
+        "streak": f"🔥 Win Streak: {get('war_win_streak', 'war_streak', padrao='?')}",
+        "data": f"🕒 Atualizado: {horario}",
     }
 
 
@@ -111,11 +158,32 @@ class StatusCla(commands.Cog):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _achar_canais(guild: discord.Guild, categoria_id: int) -> Dict[str, discord.VoiceChannel]:
-        """Mapeia os canais da categoria por emoji, com fallback por nome."""
-        categoria = guild.get_channel(categoria_id) if categoria_id else None
-        canais = categoria.voice_channels if categoria is not None else \
-            [c for c in guild.voice_channels]
+    def _achar_categoria(guild: discord.Guild, categoria_id: Any = None) -> Optional[discord.CategoryChannel]:
+        """Categoria de status: a configurada, ou a que tem "status" + "clã" no nome (como a B.A.D)."""
+        if categoria_id:
+            cat = guild.get_channel(int(categoria_id)) if str(categoria_id).isdigit() else None
+            if isinstance(cat, discord.CategoryChannel):
+                return cat
+        for cat in guild.categories:
+            nome = cat.name.lower()
+            if "status" in nome and ("clã" in nome or "cla" in nome):
+                return cat
+        for cat in guild.categories:
+            if "status" in cat.name.lower():
+                return cat
+        return None
+
+    @classmethod
+    def _achar_canais(cls, guild: discord.Guild, categoria_id: Any = None) -> Dict[str, discord.VoiceChannel]:
+        """Mapeia os canais da categoria de status por emoji (como a B.A.D).
+
+        Sem categoria reconhecida, não devolve nada — não saímos renomeando
+        canais de voz aleatórios do servidor.
+        """
+        categoria = cls._achar_categoria(guild, categoria_id)
+        if categoria is None:
+            return {}
+        canais = categoria.voice_channels
 
         mapa: Dict[str, discord.VoiceChannel] = {}
         for ch in canais:
@@ -128,31 +196,43 @@ class StatusCla(commands.Cog):
                     break
 
         if len(mapa) < 3:
-            # Sem emojis: tenta achar por palavra no nome.
+            # Sem emojis: tenta achar ao menos o contador de membros pelo nome.
             for ch in canais:
                 nome = (ch.name or "").lower()
-                for chave in ("membros", "member", "people"):
-                    if chave in nome and "membros" not in mapa:
-                        mapa["membros"] = ch
-                for chave in ("estrela", "star"):
-                    if chave in nome and "estrelas" not in mapa:
-                        mapa["estrelas"] = ch
-                for chave in ("trofeu", "troph"):
-                    if chave in nome and "trofeus" not in mapa:
-                        mapa["trofeus"] = ch
+                if "membros" not in mapa and ("membros" in nome or "member" in nome
+                                              or "people" in nome):
+                    mapa["membros"] = ch
         return mapa
 
     async def _atualizar_um(self, guild: discord.Guild, cfg: Dict[str, Any]) -> Optional[str]:
         games = cfg.get("games") or {}
-        if not games.get("coc", {}).get("enabled"):
+        if not st.module_enabled(cfg, "games") or not games.get("coc", {}).get("enabled"):
             return None
         coc = games["coc"]
         tag = coc.get("clan_tag")
         if not tag:
             return "sem tag de clã"
 
-        canais = coc.get("status_channel_ids") or {}
-        if not canais:
+        canais_ids = coc.get("status_channel_ids") or {}
+
+        # 1) Mapeamento explícito do painel (aceita as chaves antigas via _ALIAS).
+        mapa: Dict[str, discord.VoiceChannel] = {}
+        for chave, canal_id in canais_ids.items():
+            canonica = _ALIAS.get(str(chave))
+            if not canonica or canonica in mapa:
+                continue
+            cid = int(canal_id) if str(canal_id).isdigit() else None
+            canal = guild.get_channel(cid) if cid else None
+            if isinstance(canal, discord.VoiceChannel):
+                mapa[canonica] = canal
+
+        # 2) Sem mapeamento suficiente, descobre a categoria sozinho — o que a
+        #    B.A.D fazia. Assim funciona mesmo sem ninguém preencher o painel.
+        if len(mapa) < 3:
+            for chave, canal in self._achar_canais(guild, canais_ids.get("categoria_id")).items():
+                mapa.setdefault(chave, canal)
+
+        if not mapa:
             return "sem canais de status mapeados"
 
         api = await _coc()
@@ -166,21 +246,16 @@ class StatusCla(commands.Cog):
 
         dados = _numeros(clan)
         atualizados = 0
-        for chave, canal_id in canais.items():
-            canal = guild.get_channel(canal_id)
-            if canal is None or not isinstance(canal, discord.VoiceChannel):
-                continue
-            valor = dados.get(chave, "?")
-            nome_novo = canal.name.split(" ", 1)[-1] if " " in canal.name else canal.name
-            # Preserva o emoji/nome original e troca só o valor.
-            partes = (canal.name or "").split(" ")
-            prefixo = partes[0] if len(partes) > 1 else chave
-            novo = f"{prefixo} {valor}"
-            if novo != canal.name and len(novo) <= 100:
+        for chave, canal in mapa.items():
+            novo = dados.get(chave)
+            if novo and canal.name != novo and len(novo) <= 100:
                 try:
                     await canal.edit(name=novo, reason=f"AURA status {tag}")
                     atualizados += 1
+                    await asyncio.sleep(1.5)  # evita rate limit, como na B.A.D
                 except discord.Forbidden:
+                    pass
+                except discord.HTTPException:
                     pass
 
         try:
@@ -214,7 +289,7 @@ class StatusCla(commands.Cog):
         rastro nenhum. Repete só quando o motivo muda, para o loop de 10
         minutos não virar spam.
         """
-        if resultado and "atualizado" in resultado:
+        if _saudavel(resultado):
             self._avisado.pop(guild.id, None)
             return
         if self._avisado.get(guild.id) == resultado:
@@ -232,22 +307,22 @@ class StatusCla(commands.Cog):
     # Comandos
     # ------------------------------------------------------------------
 
-    grupo = app_commands.Group(name="status-cla", description="Status do clã (canais de voz).")
+    grupo = app_commands.Group(name="status-cla", description="Status do clã (canais de voz).", guild_only=True)
 
     @grupo.command(name="forcar", description="Atualiza os canais de status agora.")
-    @commands.guild_only()
-    @commands.has_permissions(manage_channels=True)
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_channels=True)
     async def forcar(self, interaction: discord.Interaction):
         guild = interaction.guild
-        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
         await interaction.response.defer(ephemeral=True)
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
         resultado = await self._atualizar_um(guild, cfg)
+        emoji = "✅" if _saudavel(resultado) else "⚠️"
         await interaction.followup.send(
-            f"✅ {resultado}" if resultado and "atualizado" in resultado
-            else f"⚠️ {resultado or 'módulo desligado aqui'}", ephemeral=True)
+            f"{emoji} {resultado or 'módulo desligado aqui'}", ephemeral=True)
 
     @grupo.command(name="ver", description="Mostra o mapeamento de canais de status.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def ver(self, interaction: discord.Interaction):
         guild = interaction.guild
         cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
@@ -262,7 +337,9 @@ class StatusCla(commands.Cog):
                     else "faltando no .env", inline=True)
         linhas = []
         for chave, canal_id in canais.items():
-            canal = guild.get_channel(canal_id)
+            if chave == "categoria_id":
+                continue
+            canal = guild.get_channel(int(canal_id)) if str(canal_id).isdigit() else None
             linhas.append(f"**{chave}** → {canal.mention if canal else '`canal ausente`'}")
         e.add_field(name="Canais mapeados", value="\n".join(linhas) or "—", inline=False)
         e.set_footer(text="Ajuste o mapeamento no painel web → Jogos")
@@ -271,8 +348,8 @@ class StatusCla(commands.Cog):
     @grupo.command(name="auto-detectar",
                    description="Detecta canais por emoji e grava o mapeamento.")
     @app_commands.describe(aplicar="Grava o mapeamento detectado (padrão: só mostra)")
-    @commands.guild_only()
-    @commands.has_permissions(manage_channels=True)
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_channels=True)
     async def auto_detectar(self, interaction: discord.Interaction,
                             aplicar: bool = False):
         guild = interaction.guild
@@ -287,6 +364,10 @@ class StatusCla(commands.Cog):
                 ephemeral=True)
 
         if aplicar:
+            # Grava no Mongo + atualiza canais (login na API do Coc + sleep por
+            # canal) pode passar dos 3s — deferir antes evita "o aplicativo não
+            # respondeu".
+            await interaction.response.defer(ephemeral=True)
             for chave, ch in achados.items():
                 canais[chave] = ch.id
             coc["status_channel_ids"] = canais
@@ -296,14 +377,17 @@ class StatusCla(commands.Cog):
                 cfg["games"]["coc"] = coc
             import mongo_db
 
-            mongo_db.upsert_guild_config(guild.id, cfg, updated_by="status-cla")
+            if not mongo_db.upsert_guild_config(guild.id, cfg, updated_by="status-cla"):
+                return await interaction.followup.send(
+                    "❌ Não consegui gravar no banco. Confira a conexão do Mongo.",
+                    ephemeral=True)
             st.invalidate(str(guild.id))
             resultado = await self._atualizar_um(guild, cfg)
             linhas = "\n".join(f"`{k}` → {c.id} ({c.name})"
                                for k, c in achados.items())
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 f"✅ Mapeamento gravado ({len(achados)} canais).\n{linhas}\n\n"
-                f"Status do Clã: {resultado or 'atualizado'}",
+                f"Status do Clã: {resultado or 'módulo desligado aqui'}",
                 ephemeral=True)
 
         linhas = [f"`{chave}` → {ch.id} ({ch.name})" for chave, ch in achados.items()]

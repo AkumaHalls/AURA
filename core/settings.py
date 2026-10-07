@@ -187,7 +187,7 @@ DEFAULT_BOAS_VINDAS: Dict[str, Any] = {
     "enabled": False,
     "channel_id": None,
     "message": "Bem-vindo(a) ao **{guild}**, {user}!",
-    "leave_message": "{user} saiu do servidor. Já我们是 {members} membros.",
+    "leave_message": "{user} saiu do servidor. Já somos {member_count} membros.",
     "send_dm": False,
     "dm_message": "Bem-vindo(a) ao **{guild}**!",
     "log_channel_id": None,
@@ -509,6 +509,19 @@ def _as_bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in ("1", "true", "on", "sim", "yes", "y")
 
 
+def _corrigir_texto(texto: str) -> str:
+    """
+    Conserta textos que ficaram corrompidos em versões antigas do padrão
+    (ex.: o `leave_message` que veio com caracteres chineses no meio).
+    Também troca `{members}` pelo placeholder real `{member_count}`.
+    """
+    if not texto:
+        return texto
+    texto = texto.replace("Já我们是", "Já somos")
+    texto = re.sub(r"\{members\}", "{member_count}", texto)
+    return texto
+
+
 def _as_choice(value: Any, choices, default):
     if value in choices:
         return value
@@ -760,10 +773,10 @@ def normalize_boas_vindas(b: Any) -> Dict[str, Any]:
     b["enabled"] = _as_bool(b.get("enabled"), False)
     for key in ("channel_id", "log_channel_id"):
         b[key] = _as_int(b.get(key))
-    b["message"] = str(b.get("message") or d["message"])[:2000]
-    b["leave_message"] = str(b.get("leave_message") or d["leave_message"])[:2000]
+    b["message"] = _corrigir_texto(str(b.get("message") or d["message"]))[:2000]
+    b["leave_message"] = _corrigir_texto(str(b.get("leave_message") or d["leave_message"]))[:2000]
     b["send_dm"] = _as_bool(b.get("send_dm"), False)
-    b["dm_message"] = str(b.get("dm_message") or d["dm_message"])[:2000]
+    b["dm_message"] = _corrigir_texto(str(b.get("dm_message") or d["dm_message"]))[:2000]
     return b
 
 

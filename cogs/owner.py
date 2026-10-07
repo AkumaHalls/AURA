@@ -250,7 +250,7 @@ class Owner(commands.Cog):
     # /bot
     # ------------------------------------------------------------------
 
-    bot = app_commands.Group(name="bot", description="Informações do AURA.")
+    bot = app_commands.Group(name="bot", description="Informações do AURA.", guild_only=True)
 
     @bot.command(name="ping", description="Latência do AURA.")
     async def ping(self, interaction: discord.Interaction):
@@ -260,7 +260,7 @@ class Owner(commands.Cog):
             f"{len(self.client.tree.get_commands())} comandos", ephemeral=True)
 
     @bot.command(name="info", description="Detalhes do AURA e do servidor.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def info(self, interaction: discord.Interaction):
         guild = interaction.guild
         cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
@@ -295,7 +295,7 @@ class Owner(commands.Cog):
         await interaction.response.send_message(embed=e, ephemeral=True)
 
     @bot.command(name="modulos", description="Módulos ativos e o que falta em cada um.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def modulos(self, interaction: discord.Interaction):
         guild = interaction.guild
         cfg = await st.get_config_cached(guild.id, guild_name=guild.name)

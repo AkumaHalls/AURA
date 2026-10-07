@@ -138,7 +138,7 @@ class misc(commands.Cog):
 
 
 #GRUPO USUARIOS 
-  usuario=app_commands.Group(name="usuario",description="Comandos de usuarios do bot.")
+  usuario=app_commands.Group(name="usuario",description="Comandos de usuarios do bot.", guild_only=True)
 
 #COMANDO USUARIO AVATAR MENU
   async def useravatarmenu(self,interaction: discord.Interaction, membro: discord.Member):
@@ -267,7 +267,7 @@ class misc(commands.Cog):
 
 
 #GRUPO SERVIDOR 
-  servidor=app_commands.Group(name="servidor",description="Comandos de usuarios do bot.")
+  servidor=app_commands.Group(name="servidor",description="Comandos de usuarios do bot.", guild_only=True)
 
 #COMANDO ICONE DE SERVIDOR
   @servidor.command(name="icone", description='🗄️⠂Exibe o ícone do servidor')

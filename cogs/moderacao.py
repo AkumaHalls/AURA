@@ -588,7 +588,7 @@ class Moderacao(commands.Cog):
         except discord.Forbidden:
             pass
 
-    mod = app_commands.Group(name="mod", description="Comandos de moderação do AURA.")
+    mod = app_commands.Group(name="mod", description="Comandos de moderação do AURA.", guild_only=True)
 
     async def _cfg_de(self, interaction) -> Optional[dict]:
         cfg = await st.get_config_cached(interaction.guild.id, guild_name=interaction.guild.name)
@@ -602,7 +602,7 @@ class Moderacao(commands.Cog):
         return cfg
 
     @mod.command(name="status", description="Mostra como a moderação está configurada aqui.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def mod_status(self, interaction: discord.Interaction):
         cfg = await st.get_config_cached(interaction.guild.id, guild_name=interaction.guild.name)
         mod_cfg = cfg.get("moderation") or {}
@@ -645,7 +645,7 @@ class Moderacao(commands.Cog):
 
     @mod.command(name="avisar", description="[Staff] Dá um aviso formal a um membro (conta como infração).")
     @app_commands.describe(membro="Quem avisar", motivo="Por quê")
-    @commands.has_permissions(kick_members=True)
+    @app_commands.checks.has_permissions(kick_members=True)
     async def mod_warn(self, interaction: discord.Interaction, membro: discord.Member, motivo: str):
         cfg = await self._cfg_de(interaction)
         if cfg is None:
@@ -694,7 +694,7 @@ class Moderacao(commands.Cog):
 
     @mod.command(name="silenciar", description="[Staff] Silencia um membro (timeout nativo do Discord).")
     @app_commands.describe(membro="Quem silenciar", minutos="Duração em minutos (máx. 40320)")
-    @commands.has_permissions(moderate_members=True)
+    @app_commands.checks.has_permissions(moderate_members=True)
     async def mod_timeout(self, interaction: discord.Interaction, membro: discord.Member, minutos: int = 10):
         cfg = await self._cfg_de(interaction)
         if cfg is None:
@@ -725,7 +725,7 @@ class Moderacao(commands.Cog):
 
     @mod.command(name="remover-silencio", description="[Staff] Tira o silenciamento (timeout).")
     @app_commands.describe(membro="Quem liberar")
-    @commands.has_permissions(moderate_members=True)
+    @app_commands.checks.has_permissions(moderate_members=True)
     async def mod_untimeout(self, interaction: discord.Interaction, membro: discord.Member):
         guild = interaction.guild
         try:
@@ -741,7 +741,7 @@ class Moderacao(commands.Cog):
 
     @mod.command(name="limpar-infrações", description="[Staff] Zera o histórico de infrações de um membro.")
     @app_commands.describe(membro="Membro", confirmar="Digite SIM para confirmar")
-    @commands.has_permissions(kick_members=True)
+    @app_commands.checks.has_permissions(kick_members=True)
     async def mod_clear(self, interaction: discord.Interaction, membro: discord.Member,
                         confirmar: str = "SIM"):
         guild = interaction.guild
@@ -761,7 +761,7 @@ class Moderacao(commands.Cog):
 
     @mod.command(name="infrações", description="[Staff] Histórico de infrações de um membro.")
     @app_commands.describe(membro="Membro a consultar")
-    @commands.has_permissions(kick_members=True)
+    @app_commands.checks.has_permissions(kick_members=True)
     async def mod_hist(self, interaction: discord.Interaction, membro: discord.Member):
         hist = mongo_db.historico_infracoes(interaction.guild.id, str(membro.id), 15)
         total = mongo_db.contar_infracoes(interaction.guild.id, membro.id)
@@ -783,7 +783,7 @@ class Moderacao(commands.Cog):
         await interaction.response.send_message(embed=e, ephemeral=True)
 
     @mod.command(name="registro", description="[Staff] Últimas punições aplicadas no servidor.")
-    @commands.has_permissions(kick_members=True)
+    @app_commands.checks.has_permissions(kick_members=True)
     async def mod_log(self, interaction: discord.Interaction):
         guild = interaction.guild
         itens = mongo_db.listar_modlog(guild.id, limite=15)
@@ -801,7 +801,7 @@ class Moderacao(commands.Cog):
 
     @mod.command(name="trancar", description="[Staff] Tranca um canal para @everyone.")
     @app_commands.describe(canal="Canal a trancar (padrão: este)")
-    @commands.has_permissions(manage_channels=True)
+    @app_commands.checks.has_permissions(manage_channels=True)
     async def mod_lock(self, interaction: discord.Interaction, canal: discord.TextChannel = None):
         alvo = canal or interaction.channel
         if not isinstance(alvo, discord.TextChannel):
@@ -817,7 +817,7 @@ class Moderacao(commands.Cog):
 
     @mod.command(name="destrancar", description="[Staff] Destrava um canal.")
     @app_commands.describe(canal="Canal a destrancar (padrão: este)")
-    @commands.has_permissions(manage_channels=True)
+    @app_commands.checks.has_permissions(manage_channels=True)
     async def mod_unlock(self, interaction: discord.Interaction, canal: discord.TextChannel = None):
         alvo = canal or interaction.channel
         if not isinstance(alvo, discord.TextChannel):
@@ -867,7 +867,7 @@ class Moderacao(commands.Cog):
         await interaction.response.send_message(embed=e, ephemeral=True)
 
     @app_commands.command(name="modconfig", description="Resumo da moderação deste servidor.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def modconfig(self, interaction: discord.Interaction):
         await self.mod_status.callback(self, interaction)
 

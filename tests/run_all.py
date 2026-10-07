@@ -28,6 +28,7 @@ TESTES = [
     ("chamadas mongo_db", "test_chamadas_db.py"),
     ("persistencia do ticket", "test_ticket_persistencia.py"),
     ("migracao do .env", "test_migracao_env.py"),
+    ("modulos de atividade", "test_modulos_atividade.py"),
 ]
 
 

@@ -159,6 +159,11 @@ class CreateTicketView(discord.ui.View):
                        emoji="🎫")
     async def abrir(self, interaction: discord.Interaction,
                     button: discord.ui.Button):
+        # Abrir ticket faz config + Mongo + create_thread + envio da saudação;
+        # pode passar dos 3s da janela de resposta. Deferir primeiro garante que
+        # o botão nunca morra com "o aplicativo não respondeu" (_erro/_msg já
+        # tratam is_done() e viram followup).
+        await interaction.response.defer(ephemeral=True, thinking=True)
         await abrir_ticket(interaction, self.key, self.guild_id)
 
 
@@ -543,22 +548,22 @@ async def abrir_ticket(interaction: discord.Interaction, key: str, guild_id: int
         )[:2000])
     else:
         try:
-            await thread.trigger_typing()
-            await asyncio.sleep(1.1)
+            async with thread.typing():
+                await asyncio.sleep(1.1)
             await thread.send(f"Oiiie {interaction.user.mention}, **tudo bem?**")
 
-            await thread.trigger_typing()
-            await asyncio.sleep(1.0)
+            async with thread.typing():
+                await asyncio.sleep(1.0)
             await thread.send(
                 f"Seja muito bem-vindo(a) ao atendimento do clã **{guild.name}**!")
 
             if mencao_staff:
-                await thread.trigger_typing()
-                await asyncio.sleep(1.1)
+                async with thread.typing():
+                    await asyncio.sleep(1.1)
                 await thread.send(f"Daqui a pouco você será **atendido** por um {mencao_staff}.")
 
-            await thread.trigger_typing()
-            await asyncio.sleep(1.0)
+            async with thread.typing():
+                await asyncio.sleep(1.0)
             await thread.send(
                 "Enquanto isso, por favor, nos dê o máximo de detalhes sobre o seu caso.")
         except (discord.Forbidden, discord.HTTPException) as exc:
@@ -757,11 +762,11 @@ class Atendimento(commands.Cog):
 
     # ---------- comandos ----------
 
-    painel = app_commands.Group(name="painel", description="Painéis do AURA.")
+    painel = app_commands.Group(name="painel", description="Painéis do AURA.", guild_only=True)
 
     @painel.command(name="enviar", description="Publica o painel de tickets neste canal.")
-    @commands.guild_only()
-    @commands.has_permissions(manage_channels=True)
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_channels=True)
     async def painel_enviar(self, interaction: discord.Interaction):
         guild = interaction.guild
         cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
@@ -809,8 +814,8 @@ class Atendimento(commands.Cog):
                             f"#{interaction.channel}", "tickets")
 
     @painel.command(name="remover", description="Apaga o embed de painel deste canal.")
-    @commands.guild_only()
-    @commands.has_permissions(manage_channels=True)
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_channels=True)
     async def painel_remover(self, interaction: discord.Interaction):
         apagados = 0
         async for msg in interaction.channel.history(limit=30):
@@ -825,8 +830,8 @@ class Atendimento(commands.Cog):
             f"🗑️ {apagados} painel(is) removido(s).", ephemeral=True)
 
     @painel.command(name="atualizar", description="Reposta o painel com a config atual.")
-    @commands.guild_only()
-    @commands.has_permissions(manage_channels=True)
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_channels=True)
     async def painel_atualizar(self, interaction: discord.Interaction):
         await self.recarregar_view(interaction.guild.id)
         cfg = await st.get_config_cached(interaction.guild.id,
@@ -836,17 +841,17 @@ class Atendimento(commands.Cog):
             f"Categorias: **{len(cfg['tickets']['categories'])}**.\n"
             "Use `/painel remover` e `/painel enviar` para republish.", ephemeral=True)
 
-    atendimento = app_commands.Group(name="atendimento", description="Gestão de tickets.")
+    atendimento = app_commands.Group(name="atendimento", description="Gestão de tickets.", guild_only=True)
 
     @atendimento.command(name="fechar", description="Fecha um ticket por ID de thread.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     @app_commands.describe(canal="O ticket (thread) a fechar")
     async def atendimento_fechar(self, interaction: discord.Interaction,
                                   canal: discord.Thread):
         await _fechar_ticket(interaction, interaction.guild.id, interaction.user)
 
     @atendimento.command(name="assumir", description="Marca o ticket como atendido por você.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def atendimento_assumir(self, interaction: discord.Interaction):
         if not isinstance(interaction.channel, discord.Thread):
             return await _erro(interaction, "Rode este comando dentro do ticket.")
@@ -857,7 +862,7 @@ class Atendimento(commands.Cog):
 
     @atendimento.command(name="adicionar",
                          description="Adiciona alguém ao ticket atual.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     @app_commands.describe(membro="Quem entra no ticket")
     async def atendimento_adicionar(self, interaction: discord.Interaction,
                                     membro: discord.Member):
@@ -872,7 +877,7 @@ class Atendimento(commands.Cog):
 
     @atendimento.command(name="remover",
                          description="Tira alguém do ticket atual.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     @app_commands.describe(membro="Quem sai do ticket")
     async def atendimento_remover(self, interaction: discord.Interaction,
                                   membro: discord.Member):
@@ -886,7 +891,7 @@ class Atendimento(commands.Cog):
             f"❌ {membro.mention} foi removido deste ticket.", ephemeral=True)
 
     @atendimento.command(name="listar", description="Lista os tickets deste servidor.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     @app_commands.describe(limite="Quantos listar (padrão 10)")
     async def atendimento_listar(self, interaction: discord.Interaction, limite: int = 10):
         itens = mongo_db.listar_tickets(guild_id=interaction.guild.id,
@@ -911,9 +916,9 @@ class Atendimento(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @atendimento.command(name="abrir", description="Abre um ticket para um membro (staff).")
-    @commands.guild_only()
+    @app_commands.guild_only()
     @app_commands.describe(membro="Para quem é o ticket", assunto="Palavra que identifica a categoria")
-    @commands.has_permissions(manage_channels=True)
+    @app_commands.checks.has_permissions(manage_channels=True)
     async def atendimento_abrir(self, interaction: discord.Interaction,
                                 membro: discord.Member, assunto: str = None):
         cfg = await st.get_config_cached(interaction.guild.id,
@@ -972,8 +977,8 @@ class Atendimento(commands.Cog):
         await interaction.response.send_message(f"✅ Ticket criado: {thread.mention}", ephemeral=True)
 
     @atendimento.command(name="importar", description="Importa threads antigas como tickets fechados.")
-    @commands.guild_only()
-    @commands.has_permissions(administrator=True)
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(administrator=True)
     async def atendimento_importar(self, interaction: discord.Interaction):
         cfg = await st.get_config_cached(interaction.guild.id,
                                          guild_name=interaction.guild.name)
@@ -1001,7 +1006,7 @@ class Atendimento(commands.Cog):
             f"✅ {importadas} thread(s) antiga(s) importada(s).", ephemeral=True)
 
     @atendimento.command(name="stats", description="Números de tickets deste servidor.")
-    @commands.guild_only()
+    @app_commands.guild_only()
     async def atendimento_stats(self, interaction: discord.Interaction):
         g = interaction.guild.id
         contagem = mongo_db.contar_tickets(g)

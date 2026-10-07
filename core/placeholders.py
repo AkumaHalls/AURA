@@ -106,6 +106,9 @@ def render(
         elif key == "member_count":
             count = getattr(guild, "member_count", None)
             val = count if count is not None else (len(getattr(guild, "members", [])) or None)
+        elif key == "members":
+            count = getattr(guild, "member_count", None)
+            val = count if count is not None else (len(getattr(guild, "members", [])) or None)
         elif key == "channel":
             val = getattr(channel, "name", None)
         elif key == "channel_id":

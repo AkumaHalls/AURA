@@ -54,6 +54,14 @@ def main() -> int:
     checa("CreateTicketView" in inspect.getsource(at.mostrar_orientacao),
           "a orientacao oferece o botao de abrir")
 
+    # o botao de abrir tem que deferir ANTES de abrir_ticket: o fluxo completo
+    # (config + Mongo + create_thread + saudacao) passa dos 3s da janela.
+    src_btn = inspect.getsource(at.CreateTicketView.abrir)
+    checa("interaction.response.defer" in src_btn,
+          "o botao Abrir Ticket defer a resposta antes de criar")
+    checa(src_btn.find("defer") < src_btn.find("abrir_ticket("),
+          "o defer acontece antes de abrir_ticket")
+
     # ---- a view do ticket e persistente e SEM delete_after ----
     checa(hasattr(at, "TicketAdminView"), "existe a view do ticket")
     checa(not hasattr(at, "StaffTicketView"),

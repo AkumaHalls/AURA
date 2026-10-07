@@ -16,9 +16,11 @@ import asyncio
 import os
 import threading
 import time
+import traceback
 from os import listdir
 
 import discord
+from discord import app_commands
 from discord.errors import LoginFailure
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
@@ -93,7 +95,36 @@ class Client(commands.Bot):
 
         # O painel recebe o cliente: é ele que fala com o Discord pela API.
         runtime.register_client(self, self.loop)
+        self.tree.on_error = self.on_tree_error
         self.loop.create_task(self._ouvir_pedido_de_sync())
+
+    async def on_tree_error(self, interaction: discord.Interaction,
+                            error: app_commands.AppCommandError):
+        """
+        Responde ao usuário quando um slash command falha.
+
+        Sem isto, um check de permissão negado (ou qualquer exceção) falhava em
+        silêncio: o Discord só mostrava "o aplicativo não respondeu".
+        """
+        if isinstance(error, app_commands.MissingPermissions):
+            faltando = ", ".join(error.missing_permissions)
+            texto = f"🚫 Você não tem permissão para isso (`{faltando}`)."
+        elif isinstance(error, app_commands.CheckFailure):
+            texto = "🚫 Você não pode usar este comando aqui."
+        else:
+            texto = "❌ Algo deu errado ao executar o comando."
+            origem = error.__cause__ or error
+            detalhe = "".join(traceback.format_exception(
+                type(origem), origem, origem.__traceback__))
+            runtime.log("ERRO", f"slash command {interaction.command}: "
+                                 f"{type(error).__name__}: {error}\n{detalhe}", "bot")
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(texto, ephemeral=True)
+            else:
+                await interaction.response.send_message(texto, ephemeral=True)
+        except discord.HTTPException:
+            pass
 
     async def _ouvir_pedido_de_sync(self):
         """O painel pede re-sync dos comandos; aqui o bot atende."""

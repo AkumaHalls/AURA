@@ -23,12 +23,12 @@ class admin(commands.Cog):
     
 
   #GRUPO ADMINISTRADOR - grupo de comandos
-  admin=app_commands.Group(name="admin",description="Comandos de controle do bot.")
+  admin=app_commands.Group(name="admin",description="Comandos de controle do bot.", guild_only=True)
 
    #COMANDO BANIR - dentro do grupo admin
   @admin.command(name="banir",description='💼⠂Banir um membro do servidor')
   @app_commands.describe(membro="Qual membro será banido?",razão="Qual a razão do banimento?")
-  @commands.has_permissions(ban_members=True)
+  @app_commands.checks.has_permissions(ban_members=True)
   async def ban(self,interaction: discord.Interaction, membro: discord.Member, razão: str):
     print (f"Usuario: {interaction.user.name} usou banir em: {membro}")
     await interaction.response.defer()
@@ -43,13 +43,13 @@ class admin(commands.Cog):
         await interaction.followup.send(embed=resposta)
       else: await interaction.followup.send(mensagemerro,ephemeral=True)
     except discord.Forbidden:
-      await interaction.response.send_message(errobanir, ephemeral=True)
+      await interaction.followup.send(errobanir, ephemeral=True)
   
 
 #COMANDO DESBANIR - dentro do grupo admin
   @admin.command(name="desbanir",description='💼⠂Desbanir um membro do servidor')
   @app_commands.describe(membro="Qual membro será desbanido?")
-  @commands.has_permissions(ban_members=True)
+  @app_commands.checks.has_permissions(ban_members=True)
   async def unban(self,interaction: discord.Interaction, membro:str):
     print (f"Usuario: {interaction.user.name} usou desbanir em: {membro}")
     try:
@@ -71,7 +71,7 @@ class admin(commands.Cog):
     #COMANDO KICK - dentro do grupo admin
   @admin.command(name="kick", description='💼⠂Expulsar um membro do servidor')
   @app_commands.describe(membro="Qual membro será expulso?", razão="Qual a razão da expulsão?")
-  @commands.has_permissions(kick_members=True)
+  @app_commands.checks.has_permissions(kick_members=True)
   async def kick(self, interaction: discord.Interaction, membro: discord.Member, razão: str):
     print(f"Usuario: {interaction.user.name} usou kick em: {membro}")
     await interaction.response.defer()
@@ -87,12 +87,12 @@ class admin(commands.Cog):
         else:
             await interaction.followup.send(mensagemerro, ephemeral=True)
     except discord.Forbidden:
-        await interaction.response.send_message(erropermissão, ephemeral=True)
+        await interaction.followup.send(erropermissão, ephemeral=True)
 
     
 
   #GRUPO CHAT 
-  chat=app_commands.Group(name="chat",description="Comandos de chat do bot.")
+  chat=app_commands.Group(name="chat",description="Comandos de chat do bot.", guild_only=True)
 
   #COMANDO DELETE CHAT
   @chat.command(name="deletar",description='🗨️⠂Deleta um chat existente')
@@ -160,7 +160,7 @@ class admin(commands.Cog):
 
 
   #GRUPO CANAL 
-  canal=app_commands.Group(name="canal",description="Comandos de canais do bot.")
+  canal=app_commands.Group(name="canal",description="Comandos de canais do bot.", guild_only=True)
 
   #COMANDO DELETE CANAL
   @canal.command(name="deletar",description='🗨️⠂Deleta um canal existente')
@@ -210,12 +210,12 @@ class admin(commands.Cog):
     await interaction.response.send_message(embed=resposta)
 
   #GRUPO CARGO 
-  cargo=app_commands.Group(name="cargo",description="Comandos de cargo do bot.")
+  cargo=app_commands.Group(name="cargo",description="Comandos de cargo do bot.", guild_only=True)
 
   #COMANDO ADD ROLE
   @cargo.command(name="adicionar",description='🔑⠂Adiciona um cargo a um membro')
   @app_commands.describe(membro="informe um membro",cargo="qual cargo deseja adicionar ao membro?")
-  @commands.has_permissions(manage_roles=True)
+  @app_commands.checks.has_permissions(manage_roles=True)
   async def roleadd(self,interaction: discord.Interaction, membro: discord.Member, cargo: discord.Role):
     print (f"Usuario: {interaction.user.name} usou add cargo")
     if interaction.user != membro and membro.top_role.position >= interaction.user.top_role.position or interaction.user.top_role.position <= cargo.position:
@@ -237,7 +237,7 @@ class admin(commands.Cog):
   #COMANDO REM ROLE
   @cargo.command(name="remover",description='🔑⠂Remove um cargo de um membro')
   @app_commands.describe(membro="informe um membro",cargo="qual cargo deseja remover do membro?")
-  @commands.has_permissions(manage_roles=True)
+  @app_commands.checks.has_permissions(manage_roles=True)
   async def rolerem(self,interaction: discord.Interaction, membro: discord.Member, cargo: discord.Role):
     print (f"Usuario: {interaction.user.name} usou rem cargo")
     if interaction.user != membro and membro.top_role.position >= interaction.user.top_role.position or interaction.user.top_role.position <= cargo.position:
@@ -259,7 +259,7 @@ class admin(commands.Cog):
     #COMANDO SWITCH ROLE
   @cargo.command(name="trocar",description='🔑⠂Troca o cargo a um membro')
   @app_commands.describe(membro="informe um membro",retirar="qual cargo deseja remover do membro?",colocar="qual cargo deseja adicionar ao membro?")
-  @commands.has_permissions(manage_roles=True)
+  @app_commands.checks.has_permissions(manage_roles=True)
   async def rolecharge(self,interaction: discord.Interaction, membro: discord.Member, retirar: discord.Role, colocar: discord.Role):
     print (f"Usuario: {interaction.user.name} usou trocar cargo")
     try:
