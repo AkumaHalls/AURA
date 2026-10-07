@@ -200,8 +200,13 @@ def main() -> int:
               "servidor do Clash ganha perfil coc automaticamente")
         checa(pc.perfil_padrao_para("810674050581659668") == "generico",
               "outro servidor ganha perfil generico automaticamente")
-    with mk.patch.dict(os.environ, {k: v for k, v in ENV.items()
-                                    if k != "TEST_GUILD_ID"}, clear=False):
+    sem_clash = {k: v for k, v in ENV.items() if k != "TEST_GUILD_ID"}
+    # Isola tambem as envs reais herdadas do ambiente (ex.: container com
+    # secrets.env apontando para o servidor do Clash), senao o "sem env do
+    # Clash" passa a depender da maquina que roda o teste.
+    for nome in pc.ENV_GUILDS_COC:
+        sem_clash[nome] = ""
+    with mk.patch.dict(os.environ, sem_clash, clear=False):
         checa(pc.perfil_padrao_para(GID) == "generico",
               "sem o env do Clash, cai no generico em vez de adivinhar")
 
