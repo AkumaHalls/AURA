@@ -103,6 +103,16 @@ def main():
     falhas += eq("alias vitorias_guerra->guerras", SC._ALIAS["vitorias_guerra"], "guerras")
     falhas += eq("alias tempo->data", SC._ALIAS["tempo"], "data")
 
+    # comando de criar as salas de status
+    falhas += verdade("existe o comando criar",
+                      hasattr(SC.StatusCla, "criar"))
+    falhas += verdade("NOMES_PADRAO cobre as 6 chaves",
+                      set(SC.NOMES_PADRAO) == set(SC.ORDEM_CANAIS))
+    falhas += verdade("EMOJI_DA_CHAVE é o inverso de EMOJIS_PADRAO",
+                      all(SC.EMOJI_DA_CHAVE[k] == e
+                          for e, k in SC.EMOJIS_PADRAO.items()))
+    falhas += eq("cria na ordem: membros primeiro", SC.ORDEM_CANAIS[0], "membros")
+
     falhas += verdade("_saudavel: 'nada mudou' é sucesso",
                       SC._saudavel("nada mudou (os canais já estavam certos)"))
     falhas += verdade("_saudavel: 'sem tag' é problema",

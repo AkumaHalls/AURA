@@ -9,6 +9,9 @@ projeto usa [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- `status-cla criar`: recria a categoria e os 6 canais de voz de status do clã
+  (Membros/Nível/Troféus/Guerras/Streak/Atualizado), reusa canais existentes e
+  grava o mapeamento; útil depois de apagar as salas antigas.
 - Módulos de atividade reimplementados como cogs dedicados: `boas_vindas`
   (entrada/saída, DM e log), `registros` (logs de entrada, saída, mensagem
   apagada, boost e mudança de cargo) e `contador` (renomeia canal de contagem

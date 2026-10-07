@@ -4,9 +4,10 @@ AURA · Status do clã
 Renomeia os canais de voz de status do clã com os dados do Clash of Clans,
 configurados POR SERVIDOR no painel web.
 
-    /status-cla configurar   escolhe a categoria e os canais
+    /status-cla criar        cria a categoria e os canais de status
     /status-cla forcar       atualiza agora
     /status-cla ver          mostra o que está configurado
+    /status-cla auto-detectar [aplicar]  acha canais por emoji
 
 Cada canal é mapeado pelo emoji do nome. Aceita os mesmos emojis de sempre,
 mas qualquer um pode ser configurado pelo painel.
@@ -51,6 +52,22 @@ _ALIAS = {
     "membros": "membros",
     "trofeus": "trofeus",
     "streak": "streak",
+}
+
+#: Emoji -> chave (inverso de EMOJIS_PADRAO), usado ao criar/reusar canais.
+EMOJI_DA_CHAVE = {chave: emoji for emoji, chave in EMOJIS_PADRAO.items()}
+
+#: Ordem em que os canais são criados dentro da categoria.
+ORDEM_CANAIS = ["membros", "nivel", "trofeus", "guerras", "streak", "data"]
+
+#: Nomes iniciais ao criar (a API do Clash substitui pelos números reais).
+NOMES_PADRAO = {
+    "membros": "👥 Membros: 0/50",
+    "nivel": "⭐ Nível: 0",
+    "trofeus": "🏆 Troféus: 0",
+    "guerras": "⚔️ Guerras Ganhas: 0",
+    "streak": "🔥 Win Streak: 0",
+    "data": "🕒 Atualizado: —",
 }
 
 
@@ -320,6 +337,89 @@ class StatusCla(commands.Cog):
         emoji = "✅" if _saudavel(resultado) else "⚠️"
         await interaction.followup.send(
             f"{emoji} {resultado or 'módulo desligado aqui'}", ephemeral=True)
+
+    @grupo.command(name="criar", description="Cria a categoria e os canais de status do clã.")
+    @app_commands.describe(nome_categoria="Nome da categoria (padrão: 🔰 Status do Clã)")
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_channels=True)
+    async def criar(self, interaction: discord.Interaction,
+                    nome_categoria: str = "🔰 Status do Clã"):
+        guild = interaction.guild
+        await interaction.response.defer(ephemeral=True)
+
+        me = guild.me
+        if me is None or not me.guild_permissions.manage_channels:
+            return await interaction.followup.send(
+                "🚫 Preciso da permissão **Gerenciar Canais** para criar as salas.",
+                ephemeral=True)
+
+        cfg = await st.get_config_cached(guild.id, guild_name=guild.name)
+        coc = dict(((cfg.get("games") or {}).get("coc") or {}))
+        canais_cfg = dict(coc.get("status_channel_ids") or {})
+
+        # Categoria: reusa a configurada/por nome; senão cria uma nova.
+        categoria = self._achar_categoria(guild, canais_cfg.get("categoria_id"))
+        if categoria is None:
+            try:
+                categoria = await guild.create_category(nome_categoria,
+                                                        reason="AURA status do clã")
+            except discord.Forbidden:
+                return await interaction.followup.send(
+                    "🚫 Não tenho permissão para criar a categoria.", ephemeral=True)
+
+        # Nomes reais quando a API estiver pronta (senão usa os placeholders).
+        nomes = dict(NOMES_PADRAO)
+        tag = coc.get("clan_tag")
+        api = await _coc()
+        if tag and api is not None:
+            try:
+                nomes.update(_numeros(await api.get_clan(tag)))
+            except Exception:
+                pass
+
+        criados = 0
+        mapeamento: Dict[str, int] = {}
+        for chave in ORDEM_CANAIS:
+            emoji = EMOJI_DA_CHAVE[chave]
+            novo_nome = nomes.get(chave, NOMES_PADRAO[chave])[:100]
+            existente = next((ch for ch in categoria.voice_channels
+                              if emoji in (ch.name or "")), None)
+            if existente is not None:
+                mapeamento[chave] = existente.id
+                if existente.name != novo_nome:
+                    try:
+                        await existente.edit(name=novo_nome, reason="AURA status do clã")
+                    except discord.HTTPException:
+                        pass
+                continue
+            try:
+                ch = await guild.create_voice_channel(
+                    novo_nome, category=categoria,
+                    overwrites={guild.default_role: discord.PermissionOverwrite(
+                        connect=False)},
+                    reason="AURA status do clã")
+            except discord.HTTPException:
+                continue
+            mapeamento[chave] = ch.id
+            criados += 1
+            await asyncio.sleep(1.0)  # evita rate limit ao criar vários canais
+
+        canais_cfg.update({k: str(v) for k, v in mapeamento.items()})
+        canais_cfg["categoria_id"] = str(categoria.id)
+        coc["status_channel_ids"] = canais_cfg
+        cfg.setdefault("games", {})["coc"] = coc
+        import mongo_db
+
+        gravou = mongo_db.upsert_guild_config(guild.id, cfg, updated_by="status-cla")
+        if gravou:
+            st.invalidate(str(guild.id))
+
+        aviso = "" if tag else ("\n⚠️ Defina a **tag do clã** no painel → Jogos "
+                                "para os números aparecerem.")
+        await interaction.followup.send(
+            f"✅ Salas de status na categoria **{categoria.name}** — "
+            f"{criados} criada(s), {len(mapeamento)} no total.{aviso}",
+            ephemeral=True)
 
     @grupo.command(name="ver", description="Mostra o mapeamento de canais de status.")
     @app_commands.guild_only()
